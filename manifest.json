@@ -1,0 +1,13 @@
+{
+    "display_name": "Avatar Inject",
+    "version": "1.0.0",
+    "description": "Injects current character/persona avatar into the prompt for multimodal LLMs",
+    "author": "RetroVioletRed",
+    "js": "index.js",
+    "css": "style.css",
+    "loading_order": 50,
+    "minimum_client_version": "1.14.0",
+    "hooks": {
+        "activate": "activate"
+    }
+}

@@ -1,0 +1,50 @@
+<div id="avatar-inject-settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Avatar Inject</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="flex-container marginTopBot5">
+                <label class="checkbox_label" for="avatar_inject_enabled" title="Inject avatar into prompt for multimodal LLMs">
+                    <input id="avatar_inject_enabled" type="checkbox">
+                    Enable avatar injection
+                </label>
+            </div>
+
+            <div id="avatar_inject_label_fields">
+                <div class="flex-container alignItemsCenter marginTopBot5">
+                    <span>Label for character avatar:</span>
+                    <input id="avatar_inject_label_char" class="text_pole" type="text" placeholder="e.g. This is how you look:">
+                </div>
+                <div class="flex-container alignItemsCenter marginTopBot5">
+                    <span>Label for user avatar:</span>
+                    <input id="avatar_inject_label_user" class="text_pole" type="text" placeholder="e.g. This is how {{user}} looks:">
+                </div>
+            </div>
+
+            <div class="flex-container alignItemsCenter marginTopBot5">
+                <span>Inject:</span>
+                <select id="avatar_inject_target" class="text_pole widthNatural">
+                    <option value="character">Character avatar</option>
+                    <option value="persona">User persona avatar</option>
+                    <option value="both">Both</option>
+                </select>
+            </div>
+
+            <div class="flex-container alignItemsCenter marginTopBot5">
+                <span>Image quality:</span>
+                <select id="avatar_inject_quality" class="text_pole widthNatural">
+                    <option value="low">Low</option>
+                    <option value="high">High</option>
+                    <option value="auto">Auto</option>
+                </select>
+            </div>
+
+            <div class="avatar-inject-hint">
+                ⚡ Requires a vision-capable model with "Inline image media" enabled in AI Response settings.
+                Each image adds ~500-2000 tokens to the prompt.
+            </div>
+        </div>
+    </div>
+</div>

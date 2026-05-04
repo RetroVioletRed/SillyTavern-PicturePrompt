@@ -1,0 +1,14 @@
+#avatar-inject-settings {
+    padding: 10px 0;
+}
+
+#avatar-inject-settings .inline-drawer-toggle {
+    margin-bottom: 8px;
+}
+
+.avatar-inject-hint {
+    font-size: 0.85em;
+    color: var(--text-muted, #888);
+    margin-top: 4px;
+    line-height: 1.4;
+}
