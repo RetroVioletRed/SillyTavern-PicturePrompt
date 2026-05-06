@@ -1,6 +1,6 @@
 # Picture Prompt
 
-Let your characters **see** the world you're building. Picture Prompt gives your multimodal LLM a visual reference — how your character looks, how your persona looks, or soon, anything you want in the scene.
+Let your [SillyTavern](https://github.com/SillyTavern/SillyTavern) characters **see** the world you're building. Picture Prompt gives your multimodal LLM a visual reference — how your character looks, how your persona looks, or soon, anything you want in the scene.
 
 Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ollama, vLLM, KoboldCpp, Featherless, NanoGPT, and more.
 
