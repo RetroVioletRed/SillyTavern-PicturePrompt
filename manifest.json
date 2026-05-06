@@ -1,7 +1,7 @@
 {
-    "display_name": "Avatar Inject",
-    "version": "1.0.0",
-    "description": "Injects current character/persona avatar into the prompt for multimodal LLMs",
+    "display_name": "Picture Prompt",
+    "version": "1.1.0",
+    "description": "Inject images with custom labels into your prompt for multimodal LLMs — avatars, reference art, location shots, anything",
     "author": "RetroVioletRed",
     "js": "index.js",
     "css": "style.css",

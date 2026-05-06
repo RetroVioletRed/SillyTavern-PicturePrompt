@@ -1,12 +1,12 @@
-#avatar-inject-settings {
+#picture-prompt-settings {
     padding: 10px 0;
 }
 
-#avatar-inject-settings .inline-drawer-toggle {
+#picture-prompt-settings .inline-drawer-toggle {
     margin-bottom: 8px;
 }
 
-.avatar-inject-hint {
+.picture-prompt-hint {
     font-size: 0.85em;
     color: var(--text-muted, #888);
     margin-top: 4px;

@@ -47,7 +47,7 @@ function getPersonaAvatarUrl() {
 
 // ── Settings ───────────────────────────────────────────────────────
 
-const moduleName = 'avatar_inject';
+const moduleName = 'picture_prompt';
 
 const defaultSettings = {
     enabled: true,
@@ -56,6 +56,28 @@ const defaultSettings = {
     labelChar: 'This is how you look:',
     labelUser: 'This is how {{user}} looks:',
 };
+
+/**
+ * Migrate settings from the old module name (avatar_inject) to the new one.
+ * Reads old settings, merges into defaults, saves under the new key, then
+ * clears the old key so the migration runs only once.
+ */
+function migrateOldSettings() {
+    const context = getContext();
+    const old = context.extensionSettings?.['avatar_inject'];
+    if (!old) return; // nothing to migrate
+
+    console.debug('[Picture Prompt] Migrating settings from avatar_inject');
+
+    const migrated = { ...defaultSettings };
+    for (const key of Object.keys(defaultSettings)) {
+        if (old[key] !== undefined) migrated[key] = old[key];
+    }
+
+    context.extensionSettings[moduleName] = migrated;
+    delete context.extensionSettings['avatar_inject'];
+    context.saveSettingsDebounced();
+}
 
 function getSettings() {
     const context = getContext();
@@ -71,32 +93,32 @@ function getSettings() {
 
 function applySettingsToUI() {
     const s = getSettings();
-    $('#avatar_inject_enabled').prop('checked', s.enabled);
-    $('#avatar_inject_target').val(s.injectTarget);
-    $('#avatar_inject_quality').val(s.imageQuality);
-    $('#avatar_inject_label_char').val(s.labelChar || '');
-    $('#avatar_inject_label_user').val(s.labelUser || '');
+    $('#picture_prompt_enabled').prop('checked', s.enabled);
+    $('#picture_prompt_target').val(s.injectTarget);
+    $('#picture_prompt_quality').val(s.imageQuality);
+    $('#picture_prompt_label_char').val(s.labelChar || '');
+    $('#picture_prompt_label_user').val(s.labelUser || '');
 }
 
 function registerSettingsListeners() {
-    $('#avatar_inject_enabled').on('change', function () {
+    $('#picture_prompt_enabled').on('change', function () {
         const s = getSettings();
         s.enabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
     });
-    $('#avatar_inject_target').on('change', function () {
+    $('#picture_prompt_target').on('change', function () {
         getSettings().injectTarget = String($(this).val());
         getContext().saveSettingsDebounced();
     });
-    $('#avatar_inject_quality').on('change', function () {
+    $('#picture_prompt_quality').on('change', function () {
         getSettings().imageQuality = String($(this).val());
         getContext().saveSettingsDebounced();
     });
-    $('#avatar_inject_label_char').on('input', function () {
+    $('#picture_prompt_label_char').on('input', function () {
         getSettings().labelChar = String($(this).val());
         getContext().saveSettingsDebounced();
     });
-    $('#avatar_inject_label_user').on('input', function () {
+    $('#picture_prompt_label_user').on('input', function () {
         getSettings().labelUser = String($(this).val());
         getContext().saveSettingsDebounced();
     });
@@ -116,15 +138,42 @@ async function urlToBase64(url) {
             reader.readAsDataURL(blob);
         });
     } catch (err) {
-        console.warn('[Avatar Inject] Failed to fetch image:', url, err);
+        console.warn('[Picture Prompt] Failed to fetch image:', url, err);
         return null;
     }
 }
 
 /**
+ * Find the system message in the chat array. System messages are already
+ * squashed by the time CHAT_COMPLETION_PROMPT_READY fires, so there's
+ * usually just one. Falls back to the first user message if no system
+ * message exists (e.g. models that don't use system prompts).
+ */
+function findMessageTarget(chat) {
+    const system = chat.find(m => m.role === 'system');
+    if (system) return system;
+    return chat.find(m => m.role === 'user') || chat[0];
+}
+
+/**
+ * Ensure a message's content is an array of content blocks.
+ * Converts string content to [{ type: 'text', text }] format.
+ * Returns false if the content type is unexpected.
+ */
+function ensureContentBlocks(msg) {
+    if (typeof msg.content === 'string') {
+        msg.content = [{ type: 'text', text: msg.content }];
+        return true;
+    }
+    if (Array.isArray(msg.content)) return true;
+    console.debug('[Picture Prompt] Unexpected content type, skipping');
+    return false;
+}
+
+/**
  * Fired when the chat completion prompt is fully assembled.
- * Injects avatar images into the first user message (system prompts
- * can serialize base64 as raw text on some providers).
+ * Injects avatar images into the system prompt (or first user message
+ * as fallback) so the model has a visual reference for characters.
  */
 async function onPromptReady(eventData) {
     const s = getSettings();
@@ -134,17 +183,9 @@ async function onPromptReady(eventData) {
     const { chat } = eventData;
     if (!chat?.length) return;
 
-    // Find the first user message — injecting into a system prompt can
-    // cause the base64 string to be sent as raw text rather than an image.
-    const msg = chat.find(m => m.role === 'user') || chat[0];
-
-    // Ensure content is an array of content blocks
-    if (typeof msg.content === 'string') {
-        msg.content = [{ type: 'text', text: msg.content }];
-    } else if (!Array.isArray(msg.content)) {
-        console.debug('[Avatar Inject] Unexpected content type, skipping');
-        return;
-    }
+    // Target the system prompt — it's the right place for visual context
+    const msg = findMessageTarget(chat);
+    if (!ensureContentBlocks(msg)) return;
 
     const quality = oai_settings?.inline_image_quality || 'auto';
 
@@ -154,25 +195,24 @@ async function onPromptReady(eventData) {
 
     function resolveLabel(template) {
         return (template || '').trim()
-            .replace(/\{\{user\}\}/gi, userName)
-            .replace(/\{\{char\}\}/gi, charName);
+            .replace(/{{user}}/gi, userName)
+            .replace(/{{char}}/gi, charName);
     }
 
     // Inject character avatar
     if (s.injectTarget === 'character' || s.injectTarget === 'both') {
         const url = getCharacterAvatarUrl();
         if (url) {
-            console.debug('[Avatar Inject] Fetching character avatar:', url);
+            console.debug('[Picture Prompt] Fetching character avatar:', url);
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                // Merge label into the existing text block instead of creating a separate one
                 if (label) msg.content[0].text += '\n' + label;
                 msg.content.push({
                     type: 'image_url',
                     image_url: { url: base64Data, detail: quality },
                 });
-                console.debug('[Avatar Inject] Injected character avatar');
+                console.debug('[Picture Prompt] Injected character avatar');
             }
         }
     }
@@ -181,17 +221,16 @@ async function onPromptReady(eventData) {
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
         if (url) {
-            console.debug('[Avatar Inject] Fetching user avatar:', url);
+            console.debug('[Picture Prompt] Fetching user avatar:', url);
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                // Merge label into the existing text block instead of creating a separate one
                 if (label) msg.content[0].text += '\n' + label;
                 msg.content.push({
                     type: 'image_url',
                     image_url: { url: base64Data, detail: quality },
                 });
-                console.debug('[Avatar Inject] Injected user avatar');
+                console.debug('[Picture Prompt] Injected user avatar');
             }
         }
     }
@@ -200,8 +239,9 @@ async function onPromptReady(eventData) {
 // ── Init ───────────────────────────────────────────────────────────
 
 async function addSettingsUI() {
-    const html = await renderExtensionTemplateAsync('third-party/avatar-inject', 'settings');
+    const html = await renderExtensionTemplateAsync('third-party/picture-prompt', 'settings');
     $('#extensions_settings').append(html);
+    migrateOldSettings();
     applySettingsToUI();
     registerSettingsListeners();
 }
@@ -210,5 +250,5 @@ export async function activate() {
     getSettings();
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
-    console.debug('[Avatar Inject] Activated');
+    console.debug('[Picture Prompt] Activated');
 }
