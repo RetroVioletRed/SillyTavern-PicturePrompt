@@ -7,14 +7,14 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 ## Features
 
 - **Avatar injection** — your character and persona avatars become part of the roleplay context
-- **System prompt injection** — images serve as a part of your roleplay context for each message
+- **System prompt injection** — injects into the system message each your response
 - **Custom labels** — describe each image to your model however fits your scene
 
 ## Requirements
 
 - SillyTavern 1.12+
 - A **Chat Completion** API (Text Completion is not supported)
-- A vision-capable model (Lattest Gemma 4, Qween, ChatGPT, Grok etc.)
+- A vision-capable model (Lattest Gemma 4, Qwen, ChatGPT, Grok etc.)
 - **"Inline image media"** enabled in AI Response settings
 
 ## Installation
@@ -26,7 +26,7 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 
 ## How it works
 
-Every time you send a message, Picture Prompt injects your images into the system message as a part of model instruction.
+Every time you send a message, Picture Prompt injects your images into the system message as a part of the model instruction.
 
 Image quality follows the global **Inline Image Quality** setting in AI Response Configuration (`low` / `high` / `auto`).
 
