@@ -15,18 +15,38 @@ import {
 } from '../../../../script.js';
 import { oai_settings } from '../../../openai.js';
 
-// ── Vision Check ───────────────────────────────────────────────────
+// ── User Feedback ─────────────────────────────────
+
+let _shownErrors = {};
+
+/**
+ * Show a toastr warning once per session, so we don't spam every
+ * generation with the same message.
+ */
+function warnOnce(key, message) {
+    if (_shownErrors[key]) return;
+    _shownErrors[key] = true;
+    toastr.warning(message, 'Picture Prompt');
+}
+
+// ── Vision Check ─────────────────────────────────
 
 /**
  * @returns {boolean} Whether the current model + settings support image inlining
  */
 function isImageInliningSupported() {
-    if (main_api !== 'openai') return false;
-    if (!oai_settings?.media_inlining) return false;
+    if (main_api !== 'openai') {
+        warnOnce('api', 'Picture Prompt only works with Chat Completion APIs. Switch to an OpenAI-compatible API (OpenRouter, Ollama, vLLM, etc.)');
+        return false;
+    }
+    if (!oai_settings?.media_inlining) {
+        warnOnce('inlining', 'Inline image media is disabled in AI Response settings. Enable it for Picture Prompt to work.');
+        return false;
+    }
     return true;
 }
 
-// ── Avatar Fetching ────────────────────────────────────────────────
+// ── Avatar Fetching ───────────────────────────────
 
 /**
  * @returns {string|null} Current character's avatar thumbnail URL
@@ -45,7 +65,7 @@ function getPersonaAvatarUrl() {
     return getThumbnailUrl('persona', user_avatar);
 }
 
-// ── Settings ───────────────────────────────────────────────────────
+// ── Settings ──────────────────────
 
 const moduleName = 'picture_prompt';
 
@@ -118,7 +138,7 @@ function registerSettingsListeners() {
     });
 }
 
-// ── Prompt Injection ───────────────────────────────────────────────
+// ── Prompt Injection ───────────────────────────────────────
 
 async function urlToBase64(url) {
     try {
@@ -207,7 +227,11 @@ async function onPromptReady(eventData) {
                     image_url: { url: base64Data, detail: quality },
                 });
                 console.debug('[Picture Prompt] Injected character avatar');
+            } else {
+                warnOnce('char-fetch', 'Failed to load character avatar image');
             }
+        } else {
+            warnOnce('char-missing', 'No character avatar set. Set one in the character panel.');
         }
     }
 
@@ -225,12 +249,16 @@ async function onPromptReady(eventData) {
                     image_url: { url: base64Data, detail: quality },
                 });
                 console.debug('[Picture Prompt] Injected user avatar');
+            } else {
+                warnOnce('persona-fetch', 'Failed to load persona avatar image');
             }
+        } else {
+            warnOnce('persona-missing', 'No persona avatar set. Set one in the persona panel.');
         }
     }
 }
 
-// ── Init ───────────────────────────────────────────────────────────
+// ── Init ─────────────────────────────────
 
 async function addSettingsUI() {
     const html = await renderExtensionTemplateAsync('third-party/picture-prompt', 'settings');
