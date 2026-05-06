@@ -1,11 +1,3 @@
-#picture-prompt-settings {
-    padding: 10px 0;
-}
-
-#picture-prompt-settings .inline-drawer-toggle {
-    margin-bottom: 8px;
-}
-
 .picture-prompt-hint {
     font-size: 0.85em;
     color: var(--text-muted, #888);

@@ -52,7 +52,6 @@ const moduleName = 'picture_prompt';
 const defaultSettings = {
     enabled: true,
     injectTarget: 'character',  // 'character' | 'persona' | 'both'
-    imageQuality: 'auto',       // 'low' | 'high' | 'auto'
     labelChar: 'This is how you look:',
     labelUser: 'This is how {{user}} looks:',
 };
@@ -95,7 +94,6 @@ function applySettingsToUI() {
     const s = getSettings();
     $('#picture_prompt_enabled').prop('checked', s.enabled);
     $('#picture_prompt_target').val(s.injectTarget);
-    $('#picture_prompt_quality').val(s.imageQuality);
     $('#picture_prompt_label_char').val(s.labelChar || '');
     $('#picture_prompt_label_user').val(s.labelUser || '');
 }
@@ -108,10 +106,6 @@ function registerSettingsListeners() {
     });
     $('#picture_prompt_target').on('change', function () {
         getSettings().injectTarget = String($(this).val());
-        getContext().saveSettingsDebounced();
-    });
-    $('#picture_prompt_quality').on('change', function () {
-        getSettings().imageQuality = String($(this).val());
         getContext().saveSettingsDebounced();
     });
     $('#picture_prompt_label_char').on('input', function () {
