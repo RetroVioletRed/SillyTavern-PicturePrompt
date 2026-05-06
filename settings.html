@@ -12,29 +12,30 @@
                 </label>
             </div>
 
-            <div id="picture_prompt_label_fields">
-                <div class="flex-container alignItemsCenter marginTopBot5">
-                    <span>Label for character picture:</span>
-                    <input id="picture_prompt_label_char" class="text_pole" type="text" placeholder="e.g. This is how you look:">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Avatar Injection</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
-                <div class="flex-container alignItemsCenter marginTopBot5">
-                    <span>Label for user picture:</span>
-                    <input id="picture_prompt_label_user" class="text_pole" type="text" placeholder="e.g. This is how {{user}} looks:">
+                <div class="inline-drawer-content">
+                    <div class="flex-container alignItemsCenter marginTopBot5">
+                        <span>Inject:</span>
+                        <select id="picture_prompt_target" class="text_pole widthNatural">
+                            <option value="character">Character avatar</option>
+                            <option value="persona">User persona avatar</option>
+                            <option value="both">Both</option>
+                        </select>
+                    </div>
+
+                    <div class="flex-container alignItemsCenter marginTopBot5">
+                        <span>Label for character avatar:</span>
+                        <input id="picture_prompt_label_char" class="text_pole" type="text" placeholder="e.g. This is how you look:">
+                    </div>
+                    <div class="flex-container alignItemsCenter marginTopBot5">
+                        <span>Label for persona avatar:</span>
+                        <input id="picture_prompt_label_user" class="text_pole" type="text" placeholder="e.g. This is how {{user}} looks:">
+                    </div>
                 </div>
-            </div>
-
-            <div class="flex-container alignItemsCenter marginTopBot5">
-                <span>Inject:</span>
-                <select id="picture_prompt_target" class="text_pole widthNatural">
-                    <option value="character">Character avatar</option>
-                    <option value="persona">User persona avatar</option>
-                    <option value="both">Both</option>
-                </select>
-            </div>
-
-            <div class="picture-prompt-hint">
-                ⚡ Requires a vision-capable model with "Inline image media" enabled in AI Response settings.
-                Each image adds ~500-2000 tokens to the prompt.
             </div>
         </div>
     </div>
