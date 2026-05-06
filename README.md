@@ -19,10 +19,13 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 
 ## Installation
 
-1. In SillyTavern, go to **Extensions** → **Install Extension**
-2. Paste `https://github.com/RetroVioletRed/SillyTavern-PicturePrompt`
-3. Restart SillyTavern
-4. Enable in Extensions panel → **Picture Prompt**
+Install via the SillyTavern extension installer **Extensions** → **Install Extension**:
+
+```txt
+https://github.com/RetroVioletRed/SillyTavern-PicturePrompt
+```
+
+Then enable in Extensions panel → **Picture Prompt**
 
 ## How it works
 
@@ -32,8 +35,8 @@ Image quality follows the global **Inline Image Quality** setting in AI Response
 
 ## FAQ
 
-**"The images aren't showing up?"**
-Right, the extension works in the background and shows your images only to the model.
+**"The images aren't showing up?"**  
+Right, the extension works in the background and shows your images only to your model.
 
 **"Does this work with my local model?"**  
 If you use OpenAI-compatible Chat Completion, yes. Ollama, vLLM, KoboldCpp, llama.cpp — they all work.
