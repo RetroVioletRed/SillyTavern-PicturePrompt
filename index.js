@@ -13,27 +13,21 @@ import {
     main_api,
     user_avatar,
 } from '../../../../script.js';
+import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
 
-// ── User Feedback ─────────────────────────────────
+// ── User Feedback ─────────────────
 
 let _shownErrors = {};
 
-/**
- * Show a toastr warning once per session, so we don't spam every
- * generation with the same message.
- */
 function warnOnce(key, message) {
     if (_shownErrors[key]) return;
     _shownErrors[key] = true;
     toastr.warning(message, 'Picture Prompt');
 }
 
-// ── Vision Check ─────────────────────────────────
+// ── Vision Check ─────────────────
 
-/**
- * @returns {boolean} Whether the current model + settings support image inlining
- */
 function isImageInliningSupported() {
     if (main_api !== 'openai') {
         warnOnce('api', 'Picture Prompt only works with Chat Completion APIs. Switch to an OpenAI-compatible API (OpenRouter, Ollama, vLLM, etc.)');
@@ -46,23 +40,128 @@ function isImageInliningSupported() {
     return true;
 }
 
-// ── Avatar Fetching ───────────────────────────────
+// ── Avatar Fetching ───────────────────────
 
-/**
- * @returns {string|null} Current character's avatar thumbnail URL
- */
 function getCharacterAvatarUrl() {
     const chId = Number(this_chid);
     if (chId < 0 || !characters?.[chId]?.avatar) return null;
     return getThumbnailUrl('avatar', characters[chId].avatar);
 }
 
-/**
- * @returns {string|null} Current user persona's avatar thumbnail URL
- */
 function getPersonaAvatarUrl() {
     if (!user_avatar) return null;
     return getThumbnailUrl('persona', user_avatar);
+}
+
+// ── IndexedDB Blob Storage ────────────────────────
+
+const DB_NAME = 'PicturePrompt';
+const DB_VERSION = 1;
+const STORE_NAME = 'extraImages';
+
+/** @returns {Promise<IDBDatabase>} */
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => {
+            if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+                req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * @param {string} id - "avatarId::filename"
+ * @param {Blob} blob
+ * @param {{filename: string, label: string}} meta
+ */
+async function dbPut(id, blob, meta) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put({ id, blob, meta, storedAt: Date.now() });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+/** @returns {Promise<blob: Blob, meta: object}|null>} */
+async function dbGet(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function dbDelete(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+/**
+ * Get all image IDs for a persona (prefix match).
+ * @param {string} avatarId
+ * @returns {Promise<string[]>}
+ */
+async function dbListForPersona(avatarId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).getAll();
+        req.onsuccess = () => {
+            const prefix = `${avatarId}::`;
+            resolve((req.result || [])
+                .filter(e => e.id.startsWith(prefix))
+                .map(e => e.id));
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Delete all images for a persona.
+ * @param {string} avatarId
+ */
+async function dbDeleteAllForPersona(avatarId) {
+    const ids = await dbListForPersona(avatarId);
+    for (const id of ids) {
+        await dbDelete(id);
+    }
+}
+
+/** @param {Blob} blob @returns {Promise<string>} data URL */
+function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+/**
+ * Get a displayable URL for an image (prefers in-memory object URL cache).
+ * Falls back to fetching the blob from IndexedDB and creating a blob: URL.
+ * @param {string} avatarId
+ * @param {string} filename
+ * @returns {Promise<string|null>}
+ */
+async function getImageDisplayUrl(avatarId, filename) {
+    const id = `${avatarId}::${filename}`;
+    const entry = await dbGet(id);
+    if (!entry?.blob) return null;
+    return URL.createObjectURL(entry.blob);
 }
 
 // ── Settings ──────────────────────
@@ -71,28 +170,23 @@ const moduleName = 'picture_prompt';
 
 const defaultSettings = {
     enabled: true,
-    injectTarget: 'character',  // 'character' | 'persona' | 'both'
+    injectTarget: 'character',
     labelChar: 'This is how you look:',
     labelUser: 'This is how {{user}} looks:',
+    extraImagesEnabled: true,
+    maxExtraImages: 8,
 };
 
-/**
- * Migrate settings from the old module name (avatar_inject) to the new one.
- * Reads old settings, merges into defaults, saves under the new key, then
- * clears the old key so the migration runs only once.
- */
 function migrateOldSettings() {
     const context = getContext();
     const old = context.extensionSettings?.['avatar_inject'];
-    if (!old) return; // nothing to migrate
+    if (!old) return;
 
     console.debug('[Picture Prompt] Migrating settings from avatar_inject');
-
     const migrated = { ...defaultSettings };
     for (const key of Object.keys(defaultSettings)) {
         if (old[key] !== undefined) migrated[key] = old[key];
     }
-
     context.extensionSettings[moduleName] = migrated;
     delete context.extensionSettings['avatar_inject'];
     context.saveSettingsDebounced();
@@ -116,12 +210,13 @@ function applySettingsToUI() {
     $('#picture_prompt_target').val(s.injectTarget);
     $('#picture_prompt_label_char').val(s.labelChar || '');
     $('#picture_prompt_label_user').val(s.labelUser || '');
+    $('#picture_prompt_extra_images_enabled').prop('checked', s.extraImagesEnabled ?? true);
+    $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
 }
 
 function registerSettingsListeners() {
     $('#picture_prompt_enabled').on('change', function () {
-        const s = getSettings();
-        s.enabled = !!$(this).prop('checked');
+        getSettings().enabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
     });
     $('#picture_prompt_target').on('change', function () {
@@ -136,59 +231,363 @@ function registerSettingsListeners() {
         getSettings().labelUser = String($(this).val());
         getContext().saveSettingsDebounced();
     });
+    $('#picture_prompt_extra_images_enabled').on('change', function () {
+        getSettings().extraImagesEnabled = !!$(this).prop('checked');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_extra_images_max').on('input', function () {
+        getSettings().maxExtraImages = parseInt($(this).val(), 10) || 8;
+        getContext().saveSettingsDebounced();
+    });
 }
 
-// ── Prompt Injection ───────────────────────────────────────
+// ── Metadata helpers ──────────────────────
 
+/**
+ * Get metadata list for a persona from extension settings.
+ * @param {string} avatarId
+ * @returns {{id: string, filename: string, label: string}[]}
+ */
+function getMetaForPersona(avatarId) {
+    const context = getContext();
+    const all = context.extensionSettings[moduleName]?.personaExtraImages;
+    if (!all || !all[avatarId]) return [];
+    return all[avatarId];
+}
+
+function setMetaForPersona(avatarId, list) {
+    const context = getContext();
+    if (!context.extensionSettings[moduleName]) {
+        context.extensionSettings[moduleName] = {};
+    }
+    context.extensionSettings[moduleName].personaExtraImages = {
+        ...context.extensionSettings[moduleName].personaExtraImages,
+        [avatarId]: list,
+    };
+    context.saveSettingsDebounced();
+}
+
+// ── Extra Images in Persona Panel ─────────────────
+
+let _pp_personaPanelObserver = null;
+let _pp_panelRendered = false;
+
+function startPersonaPanelWatcher() {
+    const $content = $('#PersonaManagement');
+    if (!$content.length) {
+        const observer = new MutationObserver((_mutations, obs) => {
+            if ($('#PersonaManagement').length) {
+                obs.disconnect();
+                startPersonaPanelWatcher();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        setTimeout(() => observer.disconnect(), 2000);
+        return;
+    }
+
+    checkAndRender();
+
+    _pp_personaPanelObserver = new MutationObserver(function (mutations) {
+        for (const m of mutations) {
+            if (m.type === 'attributes' && m.attributeName === 'class') {
+                checkAndRender();
+                break;
+            }
+        }
+    });
+    _pp_personaPanelObserver.observe($content[0], { attributes: true });
+}
+
+function checkAndRender() {
+    const $content = $('#PersonaManagement');
+    if (!$content.length) return;
+    if ($content.hasClass('openDrawer')) {
+        renderIfPanelOpen();
+    }
+}
+
+function renderIfPanelOpen() {
+    const $panel = $('.persona_management_current_persona');
+    if (!$panel.length) return;
+
+    if (_pp_panelRendered) {
+        updatePersonaLabel(user_avatar);
+        loadPersonaImagesForPanel(user_avatar);
+        return;
+    }
+
+    _pp_panelRendered = true;
+    renderExtraImagesSection(user_avatar);
+    loadPersonaImagesForPanel(user_avatar);
+}
+
+function renderExtraImagesSection(avatarId) {
+    const $panel = $('.persona_management_current_persona');
+    if ($panel.find('#pp_extra_images_section').length) return;
+
+    const personaName = power_user?.personas?.[avatarId] || avatarId || 'No persona selected';
+
+    const html = `
+        <div id="pp_extra_images_section" class="pp-extra-images-section" data-avatar-id="${escapeHtml(avatarId)}">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Extra Images</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div class="pp-extra-images-avatar-label" id="pp_extra_images_avatar_label">
+                        <i class="fa-solid fa-user"></i> ${escapeHtml(personaName)}
+                    </div>
+                    <div class="flex-container marginTopBot5">
+                        <button id="pp_upload_extra" class="menu_button" title="Upload extra images for this persona">
+                            <i class="fa-solid fa-upload margin0"></i> Upload Image
+                        </button>
+                        <input id="pp_extra_file_input" type="file" hidden accept="image/*" multiple>
+                    </div>
+                    <div id="pp_extra_images_grid" class="picture-prompt-images-grid"></div>
+                    <div id="pp_extra_empty" style="margin-top: 0.5em; color: var(--text-color-dim); font-size: 0.85em;">
+                        No extra images for this persona yet.
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    $panel.append(html);
+
+    $('#pp_upload_extra').on('click', function () {
+        $('#pp_extra_file_input').trigger('click');
+    });
+
+    $('#pp_extra_file_input').on('change', function () {
+        const files = this.files;
+        if (!files || files.length === 0) return;
+        const currentAvatar = user_avatar;
+        if (!currentAvatar) {
+            toastr.warning('No persona selected.');
+            return;
+        }
+        uploadExtraImages(currentAvatar, files);
+        $(this).val('');
+    });
+}
+
+/** Load and display extra images from IndexedDB + settings metadata. */
+async function loadPersonaImagesForPanel(avatarId) {
+    const $grid = $('#pp_extra_images_grid');
+    const $empty = $('#pp_extra_empty');
+
+    if (!avatarId) {
+        if ($grid.length) $grid.hide();
+        if ($empty.length) $empty.show().text('No persona selected.');
+        return;
+    }
+
+    if ($grid.length) $grid.show();
+    if ($empty.length) $empty.hide();
+    $grid.html('<span style="font-size:0.85em; color: var(--text-color-dim);">Loading...</span>');
+
+    try {
+        const metaList = getMetaForPersona(avatarId);
+        const images = [];
+        for (const meta of metaList) {
+            // Try IndexedDB first, then fall back to checking orphaned files
+            const id = `${avatarId}::${meta.filename}`;
+            const entry = await dbGet(id);
+            if (entry) {
+                const objUrl = URL.createObjectURL(entry.blob);
+                images.push({ ...meta, objectUrl: objUrl });
+            }
+        }
+        renderImageGrid(images, '#pp_extra_images_grid', avatarId);
+
+        if (images.length === 0) {
+            $grid.hide();
+            $empty.show().text('No extra images for this persona yet.');
+        }
+    } catch (err) {
+        console.error('[Picture Prompt] Failed to load images:', err);
+        $grid.html('<span style="font-size:0.85em; color: #e55;">Failed to load images</span>');
+    }
+}
+
+function updatePersonaLabel(avatarId) {
+    const $label = $('#pp_extra_images_avatar_label');
+    if ($label.length) {
+        const personaName = power_user?.personas?.[avatarId] || avatarId || 'Unknown';
+        $label.html(`<i class="fa-solid fa-user"></i> ${escapeHtml(personaName)}`);
+    }
+}
+
+function onPersonaChanged(avatarId) {
+    const $panel = $('.persona_management_current_persona');
+    if (!$panel.length) return;
+    renderIfPanelOpen();
+}
+
+/** Render images into a grid. @param images — array of {filename, label, objectUrl} */
+function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarId = null) {
+    const $grid = $(gridSelector);
+    $grid.empty();
+
+    if (!images || images.length === 0) {
+        $grid.html('<span style="font-size:0.85em; color: var(--text-color-dim);">No extra images uploaded yet.</span>');
+        return;
+    }
+
+    const settings = getSettings();
+    const displayImages = settings.maxExtraImages > 0
+        ? images.slice(0, settings.maxExtraImages)
+        : images;
+
+    const targetAvatarId = avatarId || ($('#pp_extra_images_section').data('avatar-id') || '');
+
+    for (const img of displayImages) {
+        const $card = $(`
+            <div class="picture-prompt-image-card" data-filename="${escapeHtml(img.filename)}">
+                <img src="${img.objectUrl}" alt="${escapeHtml(img.filename)}" loading="lazy">
+                <div class="card-body">
+                    <div class="card-label" title="${escapeHtml(img.label || img.filename)}">${escapeHtml(img.label || img.filename)}</div>
+                    <div class="card-actions">
+                        <button class="menu_button btn-delete" data-filename="${escapeHtml(img.filename)}" title="Delete this image">
+                            <i class="fa-solid fa-trash-can margin0"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `);
+        $grid.append($card);
+    }
+
+    $grid.find('.btn-delete').off('click').on('click', function () {
+        const filename = $(this).data('filename');
+        if (!confirm(`Delete "${filename}"?`)) return;
+        deleteExtraImage(targetAvatarId, filename);
+    });
+}
+
+// ── Upload / Delete (IndexedDB) ───────────────────
+
+async function uploadExtraImages(avatarId, files) {
+    const settings = getSettings();
+    const maxImages = settings.maxExtraImages || 8;
+
+    try {
+        // Count existing images from metadata
+        const existing = getMetaForPersona(avatarId);
+        const currentCount = existing.length;
+        const remaining = maxImages - currentCount;
+
+        if (remaining <= 0) {
+            toastr.warning(`Maximum of ${maxImages} extra images reached for this persona.`);
+            return;
+        }
+
+        const filesToUpload = Array.from(files).slice(0, remaining);
+        if (filesToUpload.length < files.length) {
+            toastr.warning(`Only uploading ${filesToUpload.length} of ${files.length} — limit is ${maxImages} images.`);
+        }
+        if (filesToUpload.length === 0) return;
+
+        for (const file of filesToUpload) {
+            // Validate image type
+            if (!/\.(jpg|jpeg|png|gif|webp|bmp|apng|tif|tiff)$/i.test(file.name)) {
+                toastr.warning(`"${file.name}" is not a supported image type.`);
+                continue;
+            }
+
+            // Generate unique filename to avoid collisions
+            const base = file.name.replace(/\.[^.]+$/, '');
+            const ext = (file.name.match(/\.[^.]+$/) || ['.png'])[0];
+            const filename = `${base}_${Date.now()}${ext}`;
+
+            const id = `${avatarId}::${filename}`;
+            const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+            const label = base.replace(/[_-]/g, ' ');
+
+            await dbPut(id, blob, { filename, label });
+
+            // Save metadata
+            const metaList = getMetaForPersona(avatarId);
+            metaList.push({ id, filename, label });
+            setMetaForPersona(avatarId, metaList);
+        }
+
+        toastr.success(`Uploaded ${filesToUpload.length} image(s)`);
+        loadPersonaImagesForPanel(avatarId);
+    } catch (err) {
+        console.error('[Picture Prompt] Upload failed:', err);
+        toastr.error('Upload failed. Check console for details.');
+    }
+}
+
+async function deleteExtraImage(avatarId, filename) {
+    try {
+        const id = `${avatarId}::${filename}`;
+        await dbDelete(id);
+
+        // Remove from metadata
+        const metaList = getMetaForPersona(avatarId).filter(m => m.filename !== filename);
+        setMetaForPersona(avatarId, metaList);
+
+        toastr.success('Image deleted');
+        loadPersonaImagesForPanel(avatarId);
+    } catch (err) {
+        console.error('[Picture Prompt] Delete failed:', err);
+        toastr.error('Delete failed. Check console for details.');
+    }
+}
+
+// ── Prompt Injection ──────────────────────
+
+/**
+ * Get extra images for a persona: reads metadata from settings,
+ * fetches blobs from IndexedDB, converts to base64 data URLs.
+ * @param {string} avatarId
+ * @returns {Promise<filename: string, dataUrl: string}[]>}
+ */
+async function getExtraImagesForInjection(avatarId) {
+    const metaList = getMetaForPersona(avatarId);
+    const results = [];
+    for (const meta of metaList) {
+        const entry = await dbGet(`${avatarId}::${meta.filename}`);
+        if (entry?.blob) {
+            const dataUrl = await blobToDataURL(entry.blob);
+            if (dataUrl) {
+                results.push({ filename: meta.filename, dataUrl });
+            }
+        }
+    }
+    return results;
+}
+
+/** Fetch an image URL (for avatars) and convert to base64. */
 async function urlToBase64(url) {
     try {
-        const response = await fetch(url, { method: 'GET', cache: 'force-cache' });
+        const response = await fetch(url, { cache: 'force-cache' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
+        return await blobToDataURL(await response.blob());
     } catch (err) {
         console.warn('[Picture Prompt] Failed to fetch image:', url, err);
         return null;
     }
 }
 
-/**
- * Find the system message in the chat array. System messages are already
- * squashed by the time CHAT_COMPLETION_PROMPT_READY fires, so there's
- * usually just one. Falls back to the first user message if no system
- * message exists (e.g. models that don't use system prompts).
- */
 function findMessageTarget(chat) {
     const system = chat.find(m => m.role === 'system');
     if (system) return system;
     return chat.find(m => m.role === 'user') || chat[0];
 }
 
-/**
- * Ensure a message's content is an array of content blocks.
- * Converts string content to [{ type: 'text', text }] format.
- * Returns false if the content type is unexpected.
- */
 function ensureContentBlocks(msg) {
     if (typeof msg.content === 'string') {
         msg.content = [{ type: 'text', text: msg.content }];
         return true;
     }
     if (Array.isArray(msg.content)) return true;
-    console.debug('[Picture Prompt] Unexpected content type, skipping');
     return false;
 }
 
-/**
- * Fired when the chat completion prompt is fully assembled.
- * Injects avatar images into the system prompt (or first user message
- * as fallback) so the model has a visual reference for characters.
- */
 async function onPromptReady(eventData) {
     const s = getSettings();
     if (!s.enabled) return;
@@ -197,12 +596,10 @@ async function onPromptReady(eventData) {
     const { chat } = eventData;
     if (!chat?.length) return;
 
-    // Target the system prompt — it's the right place for visual context
     const msg = findMessageTarget(chat);
     if (!ensureContentBlocks(msg)) return;
 
     const quality = oai_settings?.inline_image_quality || 'auto';
-
     const context = getContext();
     const userName = context.name1 || 'User';
     const charName = context.name2 || 'Character';
@@ -217,16 +614,11 @@ async function onPromptReady(eventData) {
     if (s.injectTarget === 'character' || s.injectTarget === 'both') {
         const url = getCharacterAvatarUrl();
         if (url) {
-            console.debug('[Picture Prompt] Fetching character avatar:', url);
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
                 if (label) msg.content[0].text += '\n' + label;
-                msg.content.push({
-                    type: 'image_url',
-                    image_url: { url: base64Data, detail: quality },
-                });
-                console.debug('[Picture Prompt] Injected character avatar');
+                msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
             }
@@ -235,30 +627,41 @@ async function onPromptReady(eventData) {
         }
     }
 
-    // Inject user persona avatar
+    // Inject persona avatar + extra images
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
         if (url) {
-            console.debug('[Picture Prompt] Fetching user avatar:', url);
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
                 if (label) msg.content[0].text += '\n' + label;
-                msg.content.push({
-                    type: 'image_url',
-                    image_url: { url: base64Data, detail: quality },
-                });
-                console.debug('[Picture Prompt] Injected user avatar');
+                msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
             }
         } else {
             warnOnce('persona-missing', 'No persona avatar set. Set one in the persona panel.');
         }
+
+        // Extra images for persona
+        if (s.extraImagesEnabled && user_avatar) {
+            const extras = await getExtraImagesForInjection(user_avatar);
+            for (const img of extras) {
+                msg.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
+            }
+        }
     }
 }
 
-// ── Init ─────────────────────────────────
+// ── Helpers ───────────────────────
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// ── Init ──────────────────
 
 async function addSettingsUI() {
     const html = await renderExtensionTemplateAsync('third-party/picture-prompt', 'settings');
@@ -272,5 +675,7 @@ export async function activate() {
     getSettings();
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
+    eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
+    startPersonaPanelWatcher();
     console.debug('[Picture Prompt] Activated');
 }

@@ -1,1 +1,82 @@
+.picture-prompt-images-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
 
+.picture-prompt-image-card {
+    background: var(--term-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.picture-prompt-image-card img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+}
+
+.picture-prompt-image-card .card-body {
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    flex: 1;
+}
+
+.picture-prompt-image-card .card-label {
+    font-size: 0.75rem;
+    color: var(--text-color-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 1.2em;
+}
+
+.picture-prompt-image-card .card-actions {
+    display: flex;
+    gap: 0.3rem;
+    margin-top: auto;
+}
+
+.picture-prompt-image-card .card-actions button {
+    flex: 1;
+    padding: 0.25rem 0.3rem;
+    font-size: 0.7rem;
+    min-height: 0;
+    line-height: 1.2;
+}
+
+.picture-prompt-image-card .card-actions .btn-load {
+    color: var(--text-color-accent);
+    border-color: var(--text-color-accent);
+}
+
+.picture-prompt-image-card .card-actions .btn-delete {
+    color: #e55;
+    border-color: #e55;
+}
+
+/* ── Extra Images section in Persona Panel ── */
+
+.pp-extra-images-section {
+    margin-top: 0.5rem;
+}
+
+.pp-extra-images-avatar-label {
+    font-size: 0.85em;
+    color: var(--text-color-dim);
+    padding: 0.25rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.pp-extra-images-avatar-label i {
+    color: var(--text-color-accent);
+}
