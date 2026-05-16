@@ -663,9 +663,13 @@ function escapeHtml(str) {
 
 // ── Init ──────────────────
 
+const extensionName = new URL(import.meta.url).pathname
+    .replace('/scripts/extensions/', '')
+    .replace('/index.js', '');
+
 async function addSettingsUI() {
     try {
-        const html = await renderExtensionTemplateAsync('third-party/picture-prompt', 'settings');
+        const html = await renderExtensionTemplateAsync(extensionName, 'settings');
         $('#extensions_settings').append(html);
         migrateOldSettings();
         applySettingsToUI();
