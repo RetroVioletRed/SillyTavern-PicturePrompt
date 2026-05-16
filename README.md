@@ -50,3 +50,6 @@ If you use OpenAI-compatible Chat Completion, yes. Ollama, vLLM, KoboldCpp, llam
 
 **"How many tokens does this cost me?"**  
 Around 500-2000 tokens per image, mostly depending on resolution. Stick with the "low" quality setting if you want to save some.
+
+**"How do i add extra images to my persona?"**  
+You go to Persona Management → Your persona → Extra Images → Upload Image. Extra images are saved per persona and injecting to the system message at each prompt.
