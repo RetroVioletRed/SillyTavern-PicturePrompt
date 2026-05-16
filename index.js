@@ -664,11 +664,16 @@ function escapeHtml(str) {
 // ── Init ──────────────────
 
 async function addSettingsUI() {
-    const html = await renderExtensionTemplateAsync('third-party/picture-prompt', 'settings');
-    $('#extensions_settings').append(html);
-    migrateOldSettings();
-    applySettingsToUI();
-    registerSettingsListeners();
+    try {
+        const html = await renderExtensionTemplateAsync('third-party/picture-prompt', 'settings');
+        $('#extensions_settings').append(html);
+        migrateOldSettings();
+        applySettingsToUI();
+        registerSettingsListeners();
+    } catch (err) {
+        console.warn('[Picture Prompt] Settings panel unavailable — template not found', err);
+        toastr.warning('Settings panel unavailable. Try reinstalling the extension.', 'Picture Prompt');
+    }
 }
 
 export async function activate() {
