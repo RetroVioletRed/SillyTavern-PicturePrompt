@@ -252,7 +252,7 @@ function getMetaForPersona(avatarId) {
     const context = getContext();
     const all = context.extensionSettings[moduleName]?.personaExtraImages;
     if (!all || !all[avatarId]) return [];
-    return all[avatarId];
+    return all[avatarId].map(m => ({ ...m, enabled: m.enabled !== false }));
 }
 
 function setMetaForPersona(avatarId, list) {
@@ -449,6 +449,9 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
                 <div class="card-body">
                     <div class="card-label" title="${escapeHtml(img.label || img.filename)}">${escapeHtml(img.label || img.filename)}</div>
                     <div class="card-actions">
+                        <label class="pp-img-toggle-label" title="Include in prompt">
+                            <input type="checkbox" class="pp-img-toggle" data-filename="${escapeHtml(img.filename)}" ${img.enabled !== false ? 'checked' : ''}>
+                        </label>
                         <button class="menu_button btn-delete" data-filename="${escapeHtml(img.filename)}" title="Delete this image">
                             <i class="fa-solid fa-trash-can margin0"></i>
                         </button>
@@ -463,6 +466,17 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
         const filename = $(this).data('filename');
         if (!confirm(`Delete "${filename}"?`)) return;
         deleteExtraImage(targetAvatarId, filename);
+    });
+
+    $grid.find('.pp-img-toggle').off('change').on('change', function () {
+        const filename = $(this).data('filename');
+        const enabled = $(this).prop('checked');
+        const metaList = getMetaForPersona(targetAvatarId);
+        const entry = metaList.find(m => m.filename === filename);
+        if (entry) {
+            entry.enabled = enabled;
+            setMetaForPersona(targetAvatarId, metaList);
+        }
     });
 }
 
@@ -548,8 +562,9 @@ async function deleteExtraImage(avatarId, filename) {
  */
 async function getExtraImagesForInjection(avatarId) {
     const metaList = getMetaForPersona(avatarId);
+    const enabledMeta = metaList.filter(m => m.enabled !== false);
     const results = [];
-    for (const meta of metaList) {
+    for (const meta of enabledMeta) {
         const entry = await dbGet(`${avatarId}::${meta.filename}`);
         if (entry?.blob) {
             const dataUrl = await blobToDataURL(entry.blob);

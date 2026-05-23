@@ -62,6 +62,32 @@
     border-color: #e55;
 }
 
+.pp-img-toggle-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0.25rem 0.3rem;
+    font-size: 0.7rem;
+    line-height: 1.2;
+    min-height: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text-color);
+    flex: 1;
+}
+
+.pp-img-toggle-label:has(input:checked) {
+    color: var(--text-color-accent);
+    border-color: var(--text-color-accent);
+}
+
+.pp-img-toggle-label input {
+    margin: 0;
+    cursor: pointer;
+}
+
 /* ── Extra Images section in Persona Panel ── */
 
 .pp-extra-images-section {
