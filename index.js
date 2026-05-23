@@ -445,12 +445,16 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
     for (const img of displayImages) {
         const $card = $(`
             <div class="picture-prompt-image-card" data-filename="${escapeHtml(img.filename)}">
-                <img src="${img.objectUrl}" alt="${escapeHtml(img.filename)}" loading="lazy">
+                <div class="card-image-wrap">
+                    <img src="${img.objectUrl}" alt="${escapeHtml(img.filename)}" loading="lazy">
+                    <div class="card-label-overlay" title="${escapeHtml(img.label || img.filename)}">${escapeHtml(img.label || img.filename)}</div>
+                </div>
                 <div class="card-body">
-                    <div class="card-label" title="${escapeHtml(img.label || img.filename)}">${escapeHtml(img.label || img.filename)}</div>
                     <div class="card-actions">
                         <label class="pp-img-toggle-label" title="Include in prompt">
                             <input type="checkbox" class="pp-img-toggle" data-filename="${escapeHtml(img.filename)}" ${img.enabled !== false ? 'checked' : ''}>
+                            <span class="pp-toggle-on">On</span>
+                            <span class="pp-toggle-off">Off</span>
                         </label>
                         <button class="menu_button btn-delete" data-filename="${escapeHtml(img.filename)}" title="Delete this image">
                             <i class="fa-solid fa-trash-can margin0"></i>
