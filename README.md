@@ -38,11 +38,11 @@ Controls in extension settings let you enable/disable injection and set a max im
 
 ## Gallery Images
 
-SillyTavern's built-in gallery now has "𖡡Inject Mode" switch. In inject mode you can sellect any image to pin it for injection.
+SillyTavern's built-in gallery now has an "𖡡Inject Mode" switch. In inject mode you can select any image to pin it for injection.
 
 Pinned images are stored per-character and can be labeled.
 
-As with Extra Images, extension settings let's you enable/disable injection and set a max image count.
+As with Extra Images, extension settings let you enable/disable injection and set a max image count.
 
 ## How it works
 
@@ -62,4 +62,4 @@ If you use OpenAI-compatible Chat Completion, yes. Ollama, vLLM, KoboldCpp, llam
 Around 500-2000 tokens per image, mostly depending on resolution. Stick with the "low" quality setting if you want to save some.
 
 **"How do i add extra images to my persona?"**  
-You go to Persona Management → Your persona → Extra Images → Upload Image. Extra images are saved per persona and injecting to the system message at each prompt.
+You go to Persona Management → Your persona → Extra Images → Upload Image. Extra images are saved per persona and injecting to the system message at each reques.
