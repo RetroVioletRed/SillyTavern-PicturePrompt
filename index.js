@@ -607,7 +607,7 @@ function injectInjectButtonIntoGallery() {
     if ($gallery.find('.pp-gallery-inject-btn').length) return;
 
     const $injectBtn = $(`
-        <div class="right_menu_button pp-gallery-inject-btn" title="Inject mode — click images to pin for prompt injection">
+        <div class="right_menu_button pp-gallery-inject-btn" title="Inject mode">
             𖡡
         </div>
     `);

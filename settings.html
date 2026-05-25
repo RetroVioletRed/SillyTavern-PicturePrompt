@@ -40,10 +40,13 @@
             </div>
 
             <!-- Extra Images Drawer -->
+
+	    <hr style="margin: 0.75rem 0; opacity: 0.3;">
+
             <div class="flex-container marginTopBot5">
                 <label class="checkbox_label" title="Automatically inject extra images into prompts">
                     <input id="picture_prompt_extra_images_enabled" type="checkbox">
-                    Auto-inject extra images
+                    Inject persona extra images
                 </label>
             </div>
 
@@ -52,12 +55,10 @@
                 <input id="picture_prompt_extra_images_max" class="text_pole" style="width:4em" type="number" min="0" max="20" value="8">
             </div>
 
-            <hr style="margin: 0.75rem 0; opacity: 0.3;">
-
             <div class="flex-container marginTopBot5">
                 <label class="checkbox_label" title="Inject pinned gallery images for the current character">
                     <input id="picture_prompt_char_extra_enabled" type="checkbox">
-                    Auto-inject character gallery images
+                    Inject gallery images
                 </label>
             </div>
 
@@ -66,7 +67,7 @@
                 <input id="picture_prompt_char_extra_max" class="text_pole" style="width:4em" type="number" min="0" max="20" value="8">
             </div>
             <div style="font-size: 0.85em; color: var(--text-color-dim);">
-                Pin images via the <b>Gallery</b> &rarr; <b>𖡡</b> Inject mode button.
+                Pin images to inject via the <b>Gallery</b> &rarr; <b>𖡡</b>  Inject mode button.
             </div>
         </div>
     </div>

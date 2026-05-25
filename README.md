@@ -8,6 +8,7 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 
 - **Avatar injection** — your character and persona avatars become part of the roleplay context
 - **Extra images per persona** — upload reference images for each of your personas, they get injected alongside the avatar
+- **Gallery images injection** — inject gallery images to the prompt with per-character storage
 - **Per-image on/off toggle** — individually enable or disable which extra images get injected, without deleting them
 - **System prompt injection** — injects into the system message on every response
 - **Custom labels** — describe each image to your model however fits your scene
@@ -33,7 +34,15 @@ Then enable in Extensions panel → **Picture Prompt**
 
 Open the persona management panel and you'll see a new **Extra Images** section. Upload any number of images per persona. They'll be stored locally in your browser and injected into prompts alongside your persona avatar.
 
-Controls in extension settings let you enable/disable auto-injection and set a max image count per prompt.
+Controls in extension settings let you enable/disable injection and set a max image count per prompt.
+
+## Gallery Images
+
+SillyTavern's built-in gallery now has "𖡡Inject Mode" switch. In inject mode you can sellect any image to pin it for injection.
+
+Pinned images are stored per-character and can be labeled.
+
+As with Extra Images, extension settings let's you enable/disable injection and set a max image count.
 
 ## How it works
 
