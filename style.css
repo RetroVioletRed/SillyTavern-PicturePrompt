@@ -210,3 +210,65 @@
     box-shadow: 0 0 14px rgba(255, 215, 0, 0.5), inset 0 0 8px rgba(255, 215, 0, 0.15);
     position: relative;
 }
+
+/* ── Gallery Image Label Overlay ── */
+
+.pp-gallery-label-btn {
+    position: fixed;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 10002;
+    color: #ffd700;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 4px;
+    padding: 2px 3px;
+    display: none;
+    pointer-events: auto;
+}
+
+.pp-gallery-label-btn.visible {
+    display: block;
+}
+
+.pp-gallery-label-overlay {
+    position: fixed;
+    z-index: 10001;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+    color: #fff;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: none;
+    pointer-events: auto;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.pp-gallery-label-overlay.visible {
+    display: block;
+}
+
+.pp-gallery-label-overlay.pp-editing {
+    padding: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: flex-end;
+}
+
+.pp-gallery-label-overlay .pp-label-input,
+.pp-gallery-label-overlay .pp-label-input:focus {
+    width: 100%;
+    border: none !important;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+    color: #fff;
+    background: transparent;
+    border-radius: 0;
+    outline: none !important;
+    box-sizing: border-box;
+    font-family: inherit;
+}

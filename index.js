@@ -320,11 +320,32 @@ function toggleCharGalleryImage(filename) {
     if (meta[filename]?.enabled) {
         meta[filename].enabled = false;
     } else {
-        meta[filename] = { enabled: true };
+        if (!meta[filename]) {
+            meta[filename] = { enabled: true, label: '' };
+        } else {
+            meta[filename].enabled = true;
+        }
     }
     setCharGalleryMeta(avatarId, meta);
     // Refresh visual state on thumbnails
     applyCharGallerySelections();
+}
+
+/**
+ * Set the label for a gallery image.
+ * @param {string} filename
+ * @param {string} labelText
+ */
+function setCharGalleryImageLabel(filename, labelText) {
+    const chId = Number(this_chid);
+    if (chId < 0 || !characters?.[chId]?.avatar) return;
+    const avatarId = characters[chId].avatar;
+    const meta = getCharGalleryMeta(avatarId);
+    if (!meta[filename]) {
+        meta[filename] = { enabled: false, label: '' };
+    }
+    meta[filename].label = labelText;
+    setCharGalleryMeta(avatarId, meta);
 }
 
 /**
@@ -359,6 +380,142 @@ function applyCharGallerySelections() {
             $el.removeClass('pp-gallery-selected');
         }
     });
+}
+
+/** Attach gradient label overlay + 🏷 button to gallery thumbnails. */
+function attachGalleryLabelButtons() {
+    const gallery = document.getElementById('dragGallery');
+    if (!gallery) return;
+
+    // Don't attach twice
+    if (gallery._pp_labelHandlerAttached) return;
+
+    let _currentThumb = null;
+    let _editing = false;
+
+    // Create the 🏷 button (singleton, fixed-position)
+    let $btn = $('.pp-gallery-label-btn');
+    if (!$btn.length) {
+        $btn = $(`<div class="pp-gallery-label-btn" title="Edit label">🏷</div>`);
+        $('body').append($btn);
+    }
+
+    // Create the gradient overlay (singleton, fixed-position)
+    let $overlay = $('.pp-gallery-label-overlay');
+    if (!$overlay.length) {
+        $overlay = $('<div class="pp-gallery-label-overlay"></div>');
+        $('body').append($overlay);
+    }
+
+    // Shared: start editing for current thumbnail
+    function startLabelEdit() {
+        if (!_currentThumb || _editing) return;
+        const filename = _currentThumb.getAttribute('title') || '';
+        if (!filename) return;
+        const chId = Number(this_chid);
+        if (chId < 0) return;
+        const avatarId = characters?.[chId]?.avatar;
+        if (!avatarId) return;
+        const meta = getCharGalleryMeta(avatarId);
+        const currentLabel = meta[filename]?.label || '';
+
+        _editing = true;
+        $btn.removeClass('visible');
+        $overlay.addClass('pp-editing');
+        $overlay.empty();
+        const $input = $(`<input class="pp-label-input" type="text" value="${escapeHtml(currentLabel)}">`);
+        $overlay.append($input);
+        $input[0].focus();
+        $input[0].select();
+
+        function saveLabel() {
+            const val = $input.val().trim();
+            setCharGalleryImageLabel(filename, val);
+            _editing = false;
+            $overlay.removeClass('pp-editing');
+            if (_currentThumb) {
+                const chId2 = Number(this_chid);
+                const avId = characters?.[chId2]?.avatar;
+                const meta2 = getCharGalleryMeta(avId);
+                const lbl = meta2[filename]?.label || '';
+                $overlay.text(lbl || '');
+            }
+        }
+
+        $input.on('blur', saveLabel);
+        $input.on('keydown', function (ev) {
+            ev.stopPropagation();
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                saveLabel();
+            } else if (ev.key === 'Escape') {
+                $overlay.removeClass('pp-editing');
+                $overlay.text(meta[filename]?.label || '');
+                _editing = false;
+            }
+        });
+    }
+
+    // 🏷 button click -> edit label
+    $btn.off('click').on('click', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        startLabelEdit();
+    });
+
+    // Double-click on overlay -> edit label
+    $overlay.off('dblclick').on('dblclick', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        startLabelEdit();
+    });
+
+    // Show overlay + 🏷 on mouseenter
+    gallery.addEventListener('mouseenter', function onEnter(e) {
+        const thumb = e.target.closest('.nGY2GThumbnail');
+        if (!thumb || _editing) return;
+        _currentThumb = thumb;
+
+        const chId = Number(this_chid);
+        const avatarId = characters?.[chId]?.avatar;
+        const meta = avatarId ? getCharGalleryMeta(avatarId) : {};
+        const filename = thumb.getAttribute('title') || '';
+        const label = meta[filename]?.label || '';
+
+        const rect = thumb.getBoundingClientRect();
+        const overlayHeight = 26;
+        $overlay.css({
+            top: (rect.bottom - overlayHeight) + 'px',
+            left: rect.left + 'px',
+            width: rect.width + 'px',
+            height: overlayHeight + 'px',
+        });
+        $overlay.text(label);
+        $overlay.addClass('visible');
+
+        $btn.css({
+            top: (rect.top + 4) + 'px',
+            left: (rect.left + 4) + 'px',
+        });
+        $btn.addClass('visible');
+    }, true);
+
+    // Hide on mouseleave
+    gallery.addEventListener('mouseleave', function onLeave(e) {
+        const thumb = e.target.closest('.nGY2GThumbnail');
+        if (!thumb) return;
+        setTimeout(() => {
+            if (_editing) return;
+            const hovered = gallery.querySelector('.nGY2GThumbnail:hover');
+            if (!hovered) {
+                $overlay.removeClass('visible');
+                $btn.removeClass('visible');
+                _currentThumb = null;
+            }
+        }, 50);
+    }, true);
+
+    gallery._pp_labelHandlerAttached = true;
 }
 
 // ── Gallery Watcher ─────────────────
@@ -400,14 +557,21 @@ function onGalleryClosed() {
 
     // Remove overlays if any remain
     document.querySelectorAll('.pp-inject-overlay').forEach(el => el.remove());
+
+    // Remove label overlay and button
+    document.querySelectorAll('.pp-gallery-label-overlay, .pp-gallery-label-btn').forEach(el => el.remove());
+
     const gallery = document.getElementById('gallery');
     if (gallery) gallery.classList.remove('pp-inject-active');
 
     // Disconnect content observer
     const dragGallery = document.getElementById('dragGallery');
-    if (dragGallery && dragGallery._pp_contentObserver) {
-        dragGallery._pp_contentObserver.disconnect();
-        delete dragGallery._pp_contentObserver;
+    if (dragGallery) {
+        if (dragGallery._pp_contentObserver) {
+            dragGallery._pp_contentObserver.disconnect();
+            delete dragGallery._pp_contentObserver;
+        }
+        delete dragGallery._pp_labelHandlerAttached;
     }
 }
 
@@ -420,6 +584,7 @@ function onGalleryOpened() {
         // Wait a bit more for nanogallery2 thumbnails to render
         setTimeout(() => {
             applyCharGallerySelections();
+            attachGalleryLabelButtons();
             if (_pp_injectModeActive) {
                 placeInjectOverlays();
             }
@@ -540,6 +705,7 @@ function watchGalleryContent() {
     const observer = new MutationObserver(() => {
         setTimeout(() => {
             applyCharGallerySelections();
+            attachGalleryLabelButtons();
             if (_pp_injectModeActive) {
                 placeInjectOverlays();
             }
@@ -989,14 +1155,14 @@ async function onPromptReady(eventData) {
         } else {
             warnOnce('char-missing', 'No character avatar set. Set one in the character panel.');
         }
-
-        // Extra images from character gallery (only when injecting character)
-        if (s.charExtraImagesEnabled) {
-            await injectCharGalleryImages(msg, quality);
-        }
     }
 
-    // Inject persona avatar + extra images
+    // Character gallery extras — controlled by its own setting, independent of avatar injection
+    if (s.charExtraImagesEnabled) {
+        await injectCharGalleryImages(msg, quality);
+    }
+
+    // Inject persona avatar
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
         if (url) {
@@ -1011,17 +1177,17 @@ async function onPromptReady(eventData) {
         } else {
             warnOnce('persona-missing', 'No persona avatar set. Set one in the persona panel.');
         }
+    }
 
-// Extra images for persona
-        if (s.extraImagesEnabled && user_avatar) {
-            const extras = await getExtraImagesForInjection(user_avatar);
-            for (const img of extras) {
-                const perImageLabel = (img.label || '').trim();
-                if (perImageLabel) {
-                    msg.content.push({ type: 'text', text: '\n' + perImageLabel });
-                }
-                msg.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
+    // Persona extra images — controlled by its own setting, independent of avatar injection
+    if (s.extraImagesEnabled && user_avatar) {
+        const extras = await getExtraImagesForInjection(user_avatar);
+        for (const img of extras) {
+            const perImageLabel = (img.label || '').trim();
+            if (perImageLabel) {
+                msg.content.push({ type: 'text', text: '\n' + perImageLabel });
             }
+            msg.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
         }
     }
 }
@@ -1054,6 +1220,10 @@ async function injectCharGalleryImages(msg, quality) {
         const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
         const base64Data = await urlToBase64(url);
         if (base64Data) {
+            const label = (meta[filename]?.label || '').trim();
+            if (label) {
+                msg.content.push({ type: 'text', text: '\n' + label });
+            }
             msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
         } else {
             console.debug('[Picture Prompt] Gallery image not found (may have been deleted):', filename);
