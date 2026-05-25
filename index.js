@@ -447,7 +447,7 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
             <div class="picture-prompt-image-card" data-filename="${escapeHtml(img.filename)}">
                 <div class="card-image-wrap">
                     <img src="${img.objectUrl}" alt="${escapeHtml(img.filename)}" loading="lazy">
-                    <div class="card-label-overlay" title="${escapeHtml(img.label || img.filename)}">${escapeHtml(img.label || img.filename)}</div>
+                    <div class="card-label-overlay pp-label-edit" title="Click to edit label">${escapeHtml(img.label || img.filename)}</div>
                 </div>
                 <div class="card-body">
                     <div class="card-actions">
@@ -482,6 +482,59 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
             setMetaForPersona(targetAvatarId, metaList);
         }
     });
+
+    // Inline label editing — double-click to edit, blur/Enter to save
+    $grid.off('blur', '.pp-label-input').on('blur', '.pp-label-input', function () {
+        commitLabelEdit(targetAvatarId, $(this));
+    });
+    $grid.off('keydown', '.pp-label-input').on('keydown', '.pp-label-input', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            $(this).trigger('blur');
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelLabelEdit($(this));
+        }
+    });
+    $grid.off('dblclick', '.pp-label-edit').on('dblclick', '.pp-label-edit', function () {
+        startLabelEdit($(this));
+    });
+}
+
+// ── Inline Label Editing Helpers ─────────
+
+function startLabelEdit($overlay) {
+    if ($overlay.find('input').length) return; // already editing
+    const currentText = $overlay.text();
+    $overlay.data('pp-original-label', currentText);
+    $overlay.addClass('pp-editing');
+    $overlay.html(`<input type="text" class="pp-label-input" value="${escapeHtml(currentText)}">`);
+    const $input = $overlay.find('input');
+    $input.focus().select();
+}
+
+function commitLabelEdit(avatarId, $input) {
+    const $overlay = $input.parent();
+    const filename = $overlay.closest('.picture-prompt-image-card').data('filename');
+    const newLabel = $input.val().trim();
+
+    // Update metadata
+    const metaList = getMetaForPersona(avatarId);
+    const entry = metaList.find(m => m.filename === filename);
+    if (entry) {
+        entry.label = newLabel;
+        setMetaForPersona(avatarId, metaList);
+    }
+
+    // Restore display
+    const displayText = newLabel || filename;
+    $overlay.removeClass('pp-editing').text(displayText);
+}
+
+function cancelLabelEdit($input) {
+    const $overlay = $input.parent();
+    const originalText = $overlay.data('pp-original-label') || '';
+    $overlay.removeClass('pp-editing').text(originalText);
 }
 
 // ── Upload / Delete (IndexedDB) ───────────────────
@@ -562,7 +615,7 @@ async function deleteExtraImage(avatarId, filename) {
  * Get extra images for a persona: reads metadata from settings,
  * fetches blobs from IndexedDB, converts to base64 data URLs.
  * @param {string} avatarId
- * @returns {Promise<filename: string, dataUrl: string}[]>}
+ * @returns {Promise<{filename: string, dataUrl: string, label: string}[]>}
  */
 async function getExtraImagesForInjection(avatarId) {
     const metaList = getMetaForPersona(avatarId);
@@ -573,7 +626,7 @@ async function getExtraImagesForInjection(avatarId) {
         if (entry?.blob) {
             const dataUrl = await blobToDataURL(entry.blob);
             if (dataUrl) {
-                results.push({ filename: meta.filename, dataUrl });
+                results.push({ filename: meta.filename, dataUrl, label: meta.label || '' });
             }
         }
     }
@@ -666,6 +719,10 @@ async function onPromptReady(eventData) {
         if (s.extraImagesEnabled && user_avatar) {
             const extras = await getExtraImagesForInjection(user_avatar);
             for (const img of extras) {
+                const perImageLabel = (img.label || '').trim();
+                if (perImageLabel) {
+                    msg.content.push({ type: 'text', text: '\n' + perImageLabel });
+                }
                 msg.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
             }
         }

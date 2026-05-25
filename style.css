@@ -44,6 +44,10 @@
     transition: opacity 0.15s ease;
 }
 
+.picture-prompt-image-card .card-label-overlay.pp-label-edit {
+    cursor: pointer;
+}
+
 .picture-prompt-image-card:hover .card-label-overlay {
     opacity: 1;
 }
@@ -138,4 +142,34 @@
 
 .pp-extra-images-avatar-label i {
     color: var(--text-color-accent);
+}
+
+/* ── Inline Label Editing ── */
+
+.pp-label-edit.pp-editing {
+    padding: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: flex-end;
+}
+
+.pp-label-input {
+    width: 100%;
+    border: none;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+    color: #fff;
+    background: rgba(255,255,255,0.12);
+    border-radius: 0;
+    outline: 1px solid var(--text-color-accent);
+    box-sizing: border-box;
+    font-family: inherit;
+}
+
+.pp-label-input:focus {
+    outline: 1px solid var(--text-color-accent);
+}
+
+.picture-prompt-image-card .card-label-overlay.pp-editing {
+    opacity: 1;
 }
