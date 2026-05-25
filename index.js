@@ -175,6 +175,8 @@ const defaultSettings = {
     labelUser: 'This is how {{user}} looks:',
     extraImagesEnabled: true,
     maxExtraImages: 8,
+    charExtraImagesEnabled: false,
+    charExtraImagesMax: 8,
 };
 
 function migrateOldSettings() {
@@ -212,6 +214,8 @@ function applySettingsToUI() {
     $('#picture_prompt_label_user').val(s.labelUser || '');
     $('#picture_prompt_extra_images_enabled').prop('checked', s.extraImagesEnabled ?? true);
     $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
+    $('#picture_prompt_char_extra_enabled').prop('checked', s.charExtraImagesEnabled ?? false);
+    $('#picture_prompt_char_extra_max').val(s.charExtraImagesMax ?? 8);
 }
 
 function registerSettingsListeners() {
@@ -237,6 +241,14 @@ function registerSettingsListeners() {
     });
     $('#picture_prompt_extra_images_max').on('input', function () {
         getSettings().maxExtraImages = parseInt($(this).val(), 10) || 8;
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_char_extra_enabled').on('change', function () {
+        getSettings().charExtraImagesEnabled = !!$(this).prop('checked');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_char_extra_max').on('input', function () {
+        getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
         getContext().saveSettingsDebounced();
     });
 }
@@ -265,6 +277,277 @@ function setMetaForPersona(avatarId, list) {
         [avatarId]: list,
     };
     context.saveSettingsDebounced();
+}
+
+// ── Character Gallery (via built-in Gallery) ─────────────────
+
+let _pp_injectModeActive = false;
+let _pp_galleryObserver = null;
+
+/**
+ * Get gallery image selections for a character from settings.
+ * @param {string} avatarId - character avatar filename
+ * @returns {Object<string, {enabled: boolean}>}
+ */
+function getCharGalleryMeta(avatarId) {
+    const context = getContext();
+    const all = context.extensionSettings[moduleName]?.characterGalleryImages;
+    if (!all || !all[avatarId]) return {};
+    return { ...all[avatarId] };
+}
+
+function setCharGalleryMeta(avatarId, obj) {
+    const context = getContext();
+    if (!context.extensionSettings[moduleName]) {
+        context.extensionSettings[moduleName] = {};
+    }
+    context.extensionSettings[moduleName].characterGalleryImages = {
+        ...context.extensionSettings[moduleName].characterGalleryImages,
+        [avatarId]: obj,
+    };
+    context.saveSettingsDebounced();
+}
+
+/**
+ * Toggle a gallery image's pin state for the current character.
+ * @param {string} filename
+ */
+function toggleCharGalleryImage(filename) {
+    const chId = Number(this_chid);
+    if (chId < 0 || !characters?.[chId]?.avatar) return;
+    const avatarId = characters[chId].avatar;
+    const meta = getCharGalleryMeta(avatarId);
+    if (meta[filename]?.enabled) {
+        meta[filename].enabled = false;
+    } else {
+        meta[filename] = { enabled: true };
+    }
+    setCharGalleryMeta(avatarId, meta);
+    // Refresh visual state on thumbnails
+    applyCharGallerySelections();
+}
+
+/**
+ * Get the gallery folder name for the current character.
+ * Mirrors built-in gallery's getGalleryFolder() logic.
+ * @returns {string|null}
+ */
+function getCharGalleryFolder() {
+    const chId = Number(this_chid);
+    if (chId < 0 || !characters?.[chId]) return null;
+    const char = characters[chId];
+    const context = getContext();
+    const customFolder = context.extensionSettings?.gallery?.folders?.[char.avatar];
+    return customFolder || char.name;
+}
+
+/** Apply/refresh "selected" visual class on gallery thumbnail elements. */
+function applyCharGallerySelections() {
+    const chId = Number(this_chid);
+    if (chId < 0 || !characters?.[chId]?.avatar) return;
+    const avatarId = characters[chId].avatar;
+    const meta = getCharGalleryMeta(avatarId);
+
+    // nanogallery2 renders thumbnails as .nGY2GThumbnail divs with title=filename
+    $('#dragGallery .nGY2GThumbnail').each(function () {
+        const $el = $(this);
+        const filename = $el.attr('title') || '';
+        if (!filename) return;
+        if (meta[filename]?.enabled) {
+            $el.addClass('pp-gallery-selected');
+        } else {
+            $el.removeClass('pp-gallery-selected');
+        }
+    });
+}
+
+// ── Gallery Watcher ─────────────────
+
+function startGalleryWatcher() {
+    const $moving = document.getElementById('movingDivs');
+    if (!$moving) {
+        // Retry once after a short delay
+        setTimeout(() => {
+            const el = document.getElementById('movingDivs');
+            if (el) observeGallery(el);
+        }, 2000);
+        return;
+    }
+    observeGallery($moving);
+}
+
+function observeGallery($moving) {
+    _pp_galleryObserver = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+            for (const node of m.addedNodes) {
+                if (node.id === 'gallery') {
+                    onGalleryOpened();
+                }
+            }
+            // Also detect when gallery is removed
+            for (const node of m.removedNodes) {
+                if (node.id === 'gallery') {
+                    onGalleryClosed();
+                }
+            }
+        }
+    });
+    _pp_galleryObserver.observe($moving, { childList: true });
+}
+
+function onGalleryClosed() {
+    _pp_injectModeActive = false;
+
+    // Remove overlays if any remain
+    document.querySelectorAll('.pp-inject-overlay').forEach(el => el.remove());
+    const gallery = document.getElementById('gallery');
+    if (gallery) gallery.classList.remove('pp-inject-active');
+
+    // Disconnect content observer
+    const dragGallery = document.getElementById('dragGallery');
+    if (dragGallery && dragGallery._pp_contentObserver) {
+        dragGallery._pp_contentObserver.disconnect();
+        delete dragGallery._pp_contentObserver;
+    }
+}
+
+function onGalleryOpened() {
+    console.debug('[Picture Prompt] Gallery opened — injecting inject mode button');
+
+    // Wait a tick for the gallery container to be fully built
+    setTimeout(() => {
+        injectInjectButtonIntoGallery();
+        // Wait a bit more for nanogallery2 thumbnails to render
+        setTimeout(() => {
+            applyCharGallerySelections();
+            if (_pp_injectModeActive) {
+                placeInjectOverlays();
+            }
+            watchGalleryContent();
+        }, 300);
+    }, 100);
+}
+
+/** Find the gallery's topBarElement and inject the 𖡡 Inject button. */
+function injectInjectButtonIntoGallery() {
+    const $gallery = $('#gallery');
+    if (!$gallery.length) return;
+
+    // The gallery adds sort select, Add Image, Delete Mode, and Folder Restore
+    // to a flex container. We inject our button between Delete Mode and Folder Restore.
+    // Target: the right_menu_button with fa-trash (delete mode button)
+    const $deleteBtn = $gallery.find('.right_menu_button.fa-trash');
+    if (!$deleteBtn.length) return;
+    // Don't inject twice
+    if ($gallery.find('.pp-gallery-inject-btn').length) return;
+
+    const $injectBtn = $(`
+        <div class="right_menu_button pp-gallery-inject-btn" title="Inject mode — click images to pin for prompt injection">
+            𖡡
+        </div>
+    `);
+    $deleteBtn.after($injectBtn);
+
+    $injectBtn.on('click', function (e) {
+        e.stopPropagation();
+        _pp_injectModeActive = !_pp_injectModeActive;
+        $(this).toggleClass('warning', _pp_injectModeActive);
+        toggleInjectOverlays(_pp_injectModeActive);
+        if (_pp_injectModeActive) {
+            toastr.info('Inject mode ON. Click gallery images to pin them for prompt injection.', undefined, { timeOut: 3000 });
+        } else {
+            toastr.info('Inject mode OFF.', undefined, { timeOut: 2000 });
+        }
+    });
+}
+
+/** Create or remove inject-mode overlays over gallery thumbnails. */
+function toggleInjectOverlays(active) {
+    const gallery = document.getElementById('gallery');
+    if (!gallery) return;
+
+    if (active) {
+        // Add CSS class that blocks pointer events on thumbnails
+        gallery.classList.add('pp-inject-active');
+        // Place overlays on visible thumbnails
+        placeInjectOverlays();
+    } else {
+        gallery.classList.remove('pp-inject-active');
+        // Remove overlay elements (they're on document.body, not inside #gallery)
+        document.querySelectorAll('.pp-inject-overlay').forEach(el => el.remove());
+    }
+}
+
+/** Position transparent overlays over each thumbnail in the current gallery page. */
+function placeInjectOverlays() {
+    const gallery = document.getElementById('gallery');
+    if (!gallery) return;
+
+    // Remove any stale overlays first (they live on document.body)
+    document.querySelectorAll('.pp-inject-overlay').forEach(el => el.remove());
+
+    // Get all visible thumbnail elements
+    const thumbs = gallery.querySelectorAll('.nGY2GThumbnail');
+    if (!thumbs.length) return;
+
+    // Create a relative positioning anchor if not already present
+    const subGallery = gallery.querySelector('.nGY2GallerySub') || gallery.querySelector('.nGY2Gallery');
+    if (!subGallery) return;
+
+    const galleryRect = gallery.getBoundingClientRect();
+
+    thumbs.forEach(thumb => {
+        // Skip already-pinned thumbnails that are in the current page
+        const rect = thumb.getBoundingClientRect();
+        // Only overlay thumbnails that are actually displayed (have non-zero dimensions)
+        if (rect.width === 0 || rect.height === 0) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'pp-inject-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            z-index: 10000;
+            top: ${rect.top}px;
+            left: ${rect.left}px;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            cursor: pointer;
+            background: transparent;
+        `;
+
+        const filename = thumb.getAttribute('title') || '';
+        overlay.dataset.filename = filename;
+
+        overlay.addEventListener('click', function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            const fn = this.dataset.filename || '';
+            if (fn) toggleCharGalleryImage(fn);
+        });
+
+        document.body.appendChild(overlay);
+    });
+}
+
+/**
+ * Watch for gallery content changes (pagination, sort) and re-apply
+ * selection visuals + inject overlays.
+ */
+function watchGalleryContent() {
+    const gallery = document.getElementById('dragGallery');
+    if (!gallery || gallery._pp_contentObserver) return;
+
+    const observer = new MutationObserver(() => {
+        setTimeout(() => {
+            applyCharGallerySelections();
+            if (_pp_injectModeActive) {
+                placeInjectOverlays();
+            }
+        }, 50);
+    });
+
+    observer.observe(gallery, { childList: true, subtree: true });
+    gallery._pp_contentObserver = observer;
 }
 
 // ── Extra Images in Persona Panel ─────────────────
@@ -706,6 +989,11 @@ async function onPromptReady(eventData) {
         } else {
             warnOnce('char-missing', 'No character avatar set. Set one in the character panel.');
         }
+
+        // Extra images from character gallery (only when injecting character)
+        if (s.charExtraImagesEnabled) {
+            await injectCharGalleryImages(msg, quality);
+        }
     }
 
     // Inject persona avatar + extra images
@@ -724,7 +1012,7 @@ async function onPromptReady(eventData) {
             warnOnce('persona-missing', 'No persona avatar set. Set one in the persona panel.');
         }
 
-        // Extra images for persona
+// Extra images for persona
         if (s.extraImagesEnabled && user_avatar) {
             const extras = await getExtraImagesForInjection(user_avatar);
             for (const img of extras) {
@@ -734,6 +1022,41 @@ async function onPromptReady(eventData) {
                 }
                 msg.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
             }
+        }
+    }
+}
+
+/**
+ * Fetch enabled character gallery images and inject them into the prompt.
+ * @param {object} msg - the target message with content array
+ * @param {string} quality - image detail level
+ */
+async function injectCharGalleryImages(msg, quality) {
+    const chId = Number(this_chid);
+    if (chId < 0 || !characters?.[chId]?.avatar) return;
+
+    const avatarId = characters[chId].avatar;
+    const meta = getCharGalleryMeta(avatarId);
+    const enabledFilenames = Object.entries(meta)
+        .filter(([, v]) => v.enabled)
+        .map(([k]) => k);
+
+    if (!enabledFilenames.length) return;
+
+    const folder = getCharGalleryFolder();
+    if (!folder) return;
+
+    const maxCount = getSettings().charExtraImagesMax || 8;
+    const toInject = enabledFilenames.slice(0, maxCount);
+
+    for (const filename of toInject) {
+        // Build gallery image URL — same pattern as gallery: user/images/{folder}/{filename}
+        const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
+        const base64Data = await urlToBase64(url);
+        if (base64Data) {
+            msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
+        } else {
+            console.debug('[Picture Prompt] Gallery image not found (may have been deleted):', filename);
         }
     }
 }
@@ -771,5 +1094,6 @@ export async function activate() {
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
     startPersonaPanelWatcher();
+    startGalleryWatcher();
     console.debug('[Picture Prompt] Activated');
 }

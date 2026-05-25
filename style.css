@@ -180,3 +180,33 @@
 .picture-prompt-image-card .card-label-overlay.pp-editing {
     opacity: 1;
 }
+
+/* ── Character Gallery Inject Mode ── */
+
+.pp-gallery-inject-btn {
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.pp-gallery-inject-btn.warning {
+    opacity: 1;
+    filter: unset;
+    color: #ffd700;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+/* Highlight selected gallery thumbnails */
+.pp-inject-active .nGY2GThumbnail {
+    pointer-events: none;
+}
+
+.pp-gallery-selected {
+    outline: 3px solid #ffd700;
+    outline-offset: -3px;
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.5), inset 0 0 8px rgba(255, 215, 0, 0.15);
+    position: relative;
+}
