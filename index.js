@@ -456,6 +456,9 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
                             <span class="pp-toggle-on">On</span>
                             <span class="pp-toggle-off">Off</span>
                         </label>
+                        <button class="menu_button btn-edit-label" data-filename="${escapeHtml(img.filename)}" title="Edit image label">
+                            🏷
+                        </button>
                         <button class="menu_button btn-delete" data-filename="${escapeHtml(img.filename)}" title="Delete this image">
                             <i class="fa-solid fa-trash-can margin0"></i>
                         </button>
@@ -470,6 +473,12 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
         const filename = $(this).data('filename');
         if (!confirm(`Delete "${filename}"?`)) return;
         deleteExtraImage(targetAvatarId, filename);
+    });
+
+    $grid.find('.btn-edit-label').off('click').on('click', function () {
+        const $card = $(this).closest('.picture-prompt-image-card');
+        const $overlay = $card.find('.pp-label-edit');
+        startLabelEdit($overlay);
     });
 
     $grid.find('.pp-img-toggle').off('change').on('change', function () {

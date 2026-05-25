@@ -84,6 +84,13 @@
     border-color: #e55;
 }
 
+.picture-prompt-image-card .card-actions .btn-edit-label {
+    color: var(--text-color);
+    border-color: var(--border-color);
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
 .pp-img-toggle-label {
     display: flex;
     align-items: center;
