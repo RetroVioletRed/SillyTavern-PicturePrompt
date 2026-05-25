@@ -10,7 +10,7 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 - **Extra images per persona** — upload reference images for each of your personas, they get injected alongside the avatar
 - **Per-image on/off toggle** — individually enable or disable which extra images get injected, without deleting them
 - **System prompt injection** — injects into the system message on every response
-- **Custom labels** — describe each avatar image to your model however fits your scene
+- **Custom labels** — describe each image to your model however fits your scene
 
 ## Requirements
 
