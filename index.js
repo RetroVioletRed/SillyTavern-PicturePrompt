@@ -1197,81 +1197,82 @@ async function getTotalImageTokenEstimate() {
     return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
 
-let _tokenEstimateTimer = null;
 let _tokenEstimateRunning = false;
+let _tokenEstimatePending = false;
 
-function refreshTokenEstimate() {
-    // Show instant feedback — the debounced call will replace this with the result
+async function refreshTokenEstimate() {
+    // Guard: if already running, mark pending and bail — will re-run when done
+    if (_tokenEstimateRunning) {
+        _tokenEstimatePending = true;
+        return;
+    }
+
     const $el = $('#picture_prompt_token_estimate');
     const $detail = $('#picture_prompt_token_breakdown');
-    const s = getSettings();
     if (!$el.length) return;
+
+    const s = getSettings();
     if (!s.enabled) {
         $el.text('disabled').css('color', 'var(--text-color-dim)');
         $detail.text('');
         return;
     }
+
     $el.text('calculating...').css('color', 'var(--text-color-dim)');
-
-    // Debounce: squash cascading events (PERSONA_CHANGED + SETTINGS_UPDATED, etc.)
-    if (_tokenEstimateTimer) clearTimeout(_tokenEstimateTimer);
-    _tokenEstimateTimer = setTimeout(_doRefreshTokenEstimate, 500);
-}
-
-async function _doRefreshTokenEstimate() {
-    // Guard: prevent concurrent execution if still running from previous trigger
-    if (_tokenEstimateRunning) return;
     _tokenEstimateRunning = true;
+
     try {
-        const $el = $('#picture_prompt_token_estimate');
-        const $detail = $('#picture_prompt_token_breakdown');
-        if (!$el.length) return;
+        const est = await getTotalImageTokenEstimate();
 
-        const s = getSettings();
-        if (!s.enabled) {
-            $el.text('disabled').css('color', 'var(--text-color-dim)');
-            $detail.text('');
-            return;
-        }
+        // Re-check DOM — might have been torn down during async work
+        const $el2 = $('#picture_prompt_token_estimate');
+        const $detail2 = $('#picture_prompt_token_breakdown');
+        if (!$el2.length) return;
 
-        try {
-            const est = await getTotalImageTokenEstimate();
-            if (est.imageCount === 0) {
-                $el.text('0 (no images)').css('color', 'var(--text-color-dim)');
-                $detail.text('');
+        if (est.imageCount === 0) {
+            $el2.text('0 (no images)').css('color', 'var(--text-color-dim)');
+            $detail2.text('');
+        } else {
+            const quality = oai_settings?.inline_image_quality || 'auto';
+            const provider = main_api;
+
+            let contextLabel = '';
+            if (provider === 'openai') {
+                if (quality === 'low') contextLabel = 'OpenAI · low detail';
+                else if (quality === 'high') contextLabel = 'OpenAI · high detail';
+                else contextLabel = 'OpenAI · auto detail';
+            } else if (provider === 'anthropic') {
+                contextLabel = 'Claude · pixel-based';
+            } else if (provider === 'google') {
+                contextLabel = 'Gemini · tiled';
             } else {
-                const quality = oai_settings?.inline_image_quality || 'auto';
-                const provider = main_api;
-
-                let contextLabel = '';
-                if (provider === 'openai') {
-                    if (quality === 'low') contextLabel = 'OpenAI · low detail';
-                    else if (quality === 'high') contextLabel = 'OpenAI · high detail';
-                    else contextLabel = 'OpenAI · auto detail';
-                } else if (provider === 'anthropic') {
-                    contextLabel = 'Claude · pixel-based';
-                } else if (provider === 'google') {
-                    contextLabel = 'Gemini · tiled';
-                } else {
-                    contextLabel = quality === 'low' ? 'Low detail' : quality === 'high' ? 'High detail' : 'Auto detail';
-                }
-
-                if (quality === 'low') {
-                    $el.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
-                } else if (quality === 'high') {
-                    $el.text(`${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
-                } else {
-                    $el.text(`${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
-                }
-                $detail.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
+                contextLabel = quality === 'low' ? 'Low detail' : quality === 'high' ? 'High detail' : 'Auto detail';
             }
-        } catch (err) {
-            console.warn('[Picture Prompt] Token estimate failed:', err);
-            $el.text('error').css('color', 'var(--error-color, #e55)');
-            $detail.text('');
+
+            if (quality === 'low') {
+                $el2.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
+            } else if (quality === 'high') {
+                $el2.text(`${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
+            } else {
+                $el2.text(`${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
+            }
+            $detail2.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
+        }
+    } catch (err) {
+        console.warn('[Picture Prompt] Token estimate failed:', err);
+        const $el3 = $('#picture_prompt_token_estimate');
+        const $detail3 = $('#picture_prompt_token_breakdown');
+        if ($el3.length) {
+            $el3.text('error').css('color', 'var(--error-color, #e55)');
+            $detail3.text('');
         }
     } finally {
         _tokenEstimateRunning = false;
+        // If another call arrived while we were busy, run one more time
+        if (_tokenEstimatePending) {
+            _tokenEstimatePending = false;
+            refreshTokenEstimate();
+        }
     }
 }
 
