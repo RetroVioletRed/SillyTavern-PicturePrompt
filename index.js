@@ -15,6 +15,7 @@ import {
 } from '../../../../script.js';
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
+import { getImageSizeFromDataURL } from '../../../utils.js';
 
 // ── User Feedback ─────────────────
 
@@ -216,6 +217,7 @@ function applySettingsToUI() {
     $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
     $('#picture_prompt_char_extra_enabled').prop('checked', s.charExtraImagesEnabled ?? false);
     $('#picture_prompt_char_extra_max').val(s.charExtraImagesMax ?? 8);
+    refreshTokenEstimate();
 }
 
 function registerSettingsListeners() {
@@ -329,6 +331,7 @@ function toggleCharGalleryImage(filename) {
     setCharGalleryMeta(avatarId, meta);
     // Refresh visual state on thumbnails
     applyCharGallerySelections();
+    refreshTokenEstimate();
 }
 
 /**
@@ -589,6 +592,7 @@ function onGalleryOpened() {
                 placeInjectOverlays();
             }
             watchGalleryContent();
+            refreshTokenEstimate();
         }, 300);
     }, 100);
 }
@@ -872,6 +876,7 @@ function onPersonaChanged(avatarId) {
     const $panel = $('.persona_management_current_persona');
     if (!$panel.length) return;
     renderIfPanelOpen();
+    refreshTokenEstimate();
 }
 
 /** Render images into a grid. @param images — array of {filename, label, objectUrl} */
@@ -1069,6 +1074,218 @@ async function deleteExtraImage(avatarId, filename) {
 
 // ── Prompt Injection ──────────────────────
 
+// ── Token Estimation ──────────────────────
+
+const IMAGE_TOKENS_LOW = 85; // OpenAI: low-detail images cost 85 tokens
+
+/**
+ * Estimate token cost for a single image.
+ * Mirrors openai.js Message.getImageTokenCost().
+ * @param {string} dataUrl - base64 data URL
+ * @param {string} quality - 'low', 'auto', or 'high'
+ * @returns {Promise<number>}
+ */
+async function estimateImageTokens(dataUrl, quality) {
+    if (quality === 'low') {
+        return IMAGE_TOKENS_LOW;
+    }
+
+    try {
+        const size = await getImageSizeFromDataURL(dataUrl);
+
+        // Small images with auto quality get low cost
+        if (quality === 'auto' && size.width <= 512 && size.height <= 512) {
+            return IMAGE_TOKENS_LOW;
+        }
+
+        // High-detail: scale → 2048 fit → shortest to 768 → count 512px squares
+        const scale = 2048 / Math.min(size.width, size.height);
+        const scaledWidth = Math.round(size.width * scale);
+        const scaledHeight = Math.round(size.height * scale);
+
+        const finalScale = 768 / Math.min(scaledWidth, scaledHeight);
+        const finalWidth = Math.round(scaledWidth * finalScale);
+        const finalHeight = Math.round(scaledHeight * finalScale);
+
+        const squares = Math.ceil(finalWidth / 512) * Math.ceil(finalHeight / 512);
+        return squares * 170 + 85;
+    } catch {
+        // If we can't get the size, fall back to low estimate
+        return IMAGE_TOKENS_LOW;
+    }
+}
+
+/**
+ * Estimate total tokens for all images that will be injected.
+ * @returns {Promise<{low: number, high: number, auto: number, imageCount: number}>}
+ */
+async function getTotalImageTokenEstimate() {
+    const s = getSettings();
+    const quality = oai_settings?.inline_image_quality || 'auto';
+    let totalLow = 0;
+    let totalHigh = 0;
+    let totalAuto = 0;
+    let imageCount = 0;
+
+    // Character avatar
+    if (s.injectTarget === 'character' || s.injectTarget === 'both') {
+        const url = getCharacterAvatarUrl();
+        if (url) {
+            const b64 = await urlToBase64(url);
+            if (b64) {
+                totalLow += await estimateImageTokens(b64, 'low');
+                totalHigh += await estimateImageTokens(b64, 'high');
+                totalAuto += await estimateImageTokens(b64, 'auto');
+                imageCount++;
+            }
+        }
+    }
+
+    // Persona avatar
+    if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
+        const url = getPersonaAvatarUrl();
+        if (url) {
+            const b64 = await urlToBase64(url);
+            if (b64) {
+                totalLow += await estimateImageTokens(b64, 'low');
+                totalHigh += await estimateImageTokens(b64, 'high');
+                totalAuto += await estimateImageTokens(b64, 'auto');
+                imageCount++;
+            }
+        }
+    }
+
+    // Persona extra images
+    if (s.extraImagesEnabled && user_avatar) {
+        const extras = await getExtraImagesForInjection(user_avatar);
+        for (const img of extras) {
+            totalLow += await estimateImageTokens(img.dataUrl, 'low');
+            totalHigh += await estimateImageTokens(img.dataUrl, 'high');
+            totalAuto += await estimateImageTokens(img.dataUrl, 'auto');
+            imageCount++;
+        }
+    }
+
+    // Character gallery images
+    if (s.charExtraImagesEnabled) {
+        const chId = Number(this_chid);
+        if (chId >= 0 && characters?.[chId]?.avatar) {
+            const avatarId = characters[chId].avatar;
+            const meta = getCharGalleryMeta(avatarId);
+            const enabledFilenames = Object.entries(meta)
+                .filter(([, v]) => v.enabled)
+                .map(([k]) => k);
+            const maxCount = s.charExtraImagesMax || 8;
+            const toInject = enabledFilenames.slice(0, maxCount);
+            if (toInject.length > 0) {
+                const folder = getCharGalleryFolder();
+                if (folder) {
+                    for (const filename of toInject) {
+                        const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
+                        const b64 = await urlToBase64(url);
+                        if (b64) {
+                            totalLow += await estimateImageTokens(b64, 'low');
+                            totalHigh += await estimateImageTokens(b64, 'high');
+                            totalAuto += await estimateImageTokens(b64, 'auto');
+                            imageCount++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
+}
+
+let _tokenEstimateRunning = false;
+let _tokenEstimatePending = false;
+
+/** Show 'calculating...' instantly — call this BEFORE refreshTokenEstimate()
+ *  from early hooks (click, MutationObserver) that fire before ST's events. */
+function showCalculating() {
+    const $el = $('#picture_prompt_token_estimate');
+    if ($el.length && getSettings().enabled) {
+        $el.text('calculating...').css('color', 'var(--text-color-dim)');
+    }
+}
+
+async function refreshTokenEstimate() {
+    // Guard: if already running, mark pending and bail — will re-run when done
+    if (_tokenEstimateRunning) {
+        _tokenEstimatePending = true;
+        return;
+    }
+
+    const $el = $('#picture_prompt_token_estimate');
+    const $detail = $('#picture_prompt_token_breakdown');
+    if (!$el.length) return;
+
+    const s = getSettings();
+    if (!s.enabled) {
+        $el.text('disabled').css('color', 'var(--text-color-dim)');
+        $detail.text('');
+        return;
+    }
+
+    $el.text('calculating...').css('color', 'var(--text-color-dim)');
+    _tokenEstimateRunning = true;
+
+    try {
+        const est = await getTotalImageTokenEstimate();
+
+        // Re-check DOM — might have been torn down during async work
+        const $el2 = $('#picture_prompt_token_estimate');
+        const $detail2 = $('#picture_prompt_token_breakdown');
+        if (!$el2.length) return;
+
+        if (est.imageCount === 0) {
+            $el2.text('0 (no images)').css('color', 'var(--text-color-dim)');
+            $detail2.text('');
+        } else {
+            const quality = oai_settings?.inline_image_quality || 'auto';
+            const provider = main_api;
+
+            let contextLabel = '';
+            if (provider === 'openai') {
+                if (quality === 'low') contextLabel = 'OpenAI · low detail';
+                else if (quality === 'high') contextLabel = 'OpenAI · high detail';
+                else contextLabel = 'OpenAI · auto detail';
+            } else if (provider === 'anthropic') {
+                contextLabel = 'Claude · pixel-based';
+            } else if (provider === 'google') {
+                contextLabel = 'Gemini · tiled';
+            } else {
+                contextLabel = quality === 'low' ? 'Low detail' : quality === 'high' ? 'High detail' : 'Auto detail';
+            }
+
+            if (quality === 'low') {
+                $el2.text(`≈ ${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
+            } else if (quality === 'high') {
+                $el2.text(`≈ ${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
+            } else {
+                $el2.text(`≈ ${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
+            }
+            $detail2.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
+        }
+    } catch (err) {
+        console.warn('[Picture Prompt] Token estimate failed:', err);
+        const $el3 = $('#picture_prompt_token_estimate');
+        const $detail3 = $('#picture_prompt_token_breakdown');
+        if ($el3.length) {
+            $el3.text('error').css('color', 'var(--error-color, #e55)');
+            $detail3.text('');
+        }
+    } finally {
+        _tokenEstimateRunning = false;
+        // If another call arrived while we were busy, run one more time
+        if (_tokenEstimatePending) {
+            _tokenEstimatePending = false;
+            refreshTokenEstimate();
+        }
+    }
+}
+
 /**
  * Get extra images for a persona: reads metadata from settings,
  * fetches blobs from IndexedDB, converts to base64 data URLs.
@@ -1263,7 +1480,36 @@ export async function activate() {
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
+    eventSource.on(event_types.CHAT_CHANGED, () => refreshTokenEstimate());
+    eventSource.on(event_types.SETTINGS_UPDATED, () => refreshTokenEstimate());
     startPersonaPanelWatcher();
     startGalleryWatcher();
+
+    // ── Early-visible 'calculating...' hooks ─────────────────────
+    // ST's event system fires late — these bridge the visual gap by
+    // showing 'calculating...' before the real estimate runs.
+
+    // Chat block clicks (chat switcher)
+    $(document).on('click', '.select_chat_block', (e) => {
+        if ($(e.target).closest('.PastChat_cross, .exportRawChatButton, .exportChatButton, .renameChatButton').length) return;
+        showCalculating();
+    });
+
+    // Persona dropdown changes — fires before PERSONA_CHANGED event
+    if (typeof MutationObserver !== 'undefined') {
+        const personaObs = new MutationObserver(() => showCalculating());
+        // Observe after a short delay — the dropdown may not be in DOM yet
+        const tryObservePersona = () => {
+            const $dd = $('#persona-management-dropdown');
+            if ($dd.length) {
+                personaObs.observe($dd[0], { subtree: true, childList: true, characterData: true });
+            } else {
+                setTimeout(tryObservePersona, 200);
+            }
+        };
+        setTimeout(tryObservePersona, 100);
+    }
+
     console.debug('[Picture Prompt] Activated');
+    refreshTokenEstimate();
 }
