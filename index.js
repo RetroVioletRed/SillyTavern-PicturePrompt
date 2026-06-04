@@ -1208,19 +1208,23 @@ async function getTotalImageTokenEstimate() {
     return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
 
+let _tokenEstimateTimer = null;
 let _tokenEstimateRunning = false;
 
-async function refreshTokenEstimate() {
-    // Prevent concurrent calculations — PERSONA_CHANGED + SETTINGS_UPDATED
-    // often fire together; the second call produces the same result anyway.
+function refreshTokenEstimate() {
+    // Debounce: squash cascading events (PERSONA_CHANGED + SETTINGS_UPDATED, etc.)
+    if (_tokenEstimateTimer) clearTimeout(_tokenEstimateTimer);
+    _tokenEstimateTimer = setTimeout(_doRefreshTokenEstimate, 500);
+}
+
+async function _doRefreshTokenEstimate() {
+    // Guard: prevent concurrent execution if still running from previous trigger
     if (_tokenEstimateRunning) return;
     _tokenEstimateRunning = true;
     try {
         const $el = $('#picture_prompt_token_estimate');
         const $detail = $('#picture_prompt_token_breakdown');
-        if (!$el.length) {
-            return;
-        }
+        if (!$el.length) return;
 
         const s = getSettings();
         if (!s.enabled) {
@@ -1239,7 +1243,7 @@ async function refreshTokenEstimate() {
             } else {
                 const quality = oai_settings?.inline_image_quality || 'auto';
                 const provider = main_api;
-                
+
                 let contextLabel = '';
                 if (provider === 'openai') {
                     if (quality === 'low') contextLabel = 'OpenAI · low detail';
@@ -1252,7 +1256,7 @@ async function refreshTokenEstimate() {
                 } else {
                     contextLabel = quality === 'low' ? 'Low detail' : quality === 'high' ? 'High detail' : 'Auto detail';
                 }
-                
+
                 if (quality === 'low') {
                     $el.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
                 } else if (quality === 'high') {
