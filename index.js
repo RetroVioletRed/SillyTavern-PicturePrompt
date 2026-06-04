@@ -224,42 +224,34 @@ function registerSettingsListeners() {
     $('#picture_prompt_enabled').on('change', function () {
         getSettings().enabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_target').on('change', function () {
         getSettings().injectTarget = String($(this).val());
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_label_char').on('input', function () {
         getSettings().labelChar = String($(this).val());
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_label_user').on('input', function () {
         getSettings().labelUser = String($(this).val());
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_extra_images_enabled').on('change', function () {
         getSettings().extraImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_extra_images_max').on('input', function () {
         getSettings().maxExtraImages = parseInt($(this).val(), 10) || 8;
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_char_extra_enabled').on('change', function () {
         getSettings().charExtraImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
     $('#picture_prompt_char_extra_max').on('input', function () {
         getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
         getContext().saveSettingsDebounced();
-        refreshTokenEstimate();
     });
 }
 
@@ -884,7 +876,6 @@ function onPersonaChanged(avatarId) {
     const $panel = $('.persona_management_current_persona');
     if (!$panel.length) return;
     renderIfPanelOpen();
-    refreshTokenEstimate();
 }
 
 /** Render images into a grid. @param images — array of {filename, label, objectUrl} */
@@ -951,7 +942,6 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
         if (entry) {
             entry.enabled = enabled;
             setMetaForPersona(targetAvatarId, metaList);
-            refreshTokenEstimate();
         }
     });
 
@@ -1075,7 +1065,6 @@ async function deleteExtraImage(avatarId, filename) {
 
         toastr.success('Image deleted');
         loadPersonaImagesForPanel(avatarId);
-        refreshTokenEstimate();
     } catch (err) {
         console.error('[Picture Prompt] Delete failed:', err);
         toastr.error('Delete failed. Check console for details.');
