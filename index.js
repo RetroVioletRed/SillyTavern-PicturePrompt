@@ -1465,6 +1465,7 @@ export async function activate() {
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
     eventSource.on(event_types.CHAT_CHANGED, () => refreshTokenEstimate());
+    eventSource.on(event_types.SETTINGS_UPDATED, () => refreshTokenEstimate());
     startPersonaPanelWatcher();
     startGalleryWatcher();
     console.debug('[Picture Prompt] Activated');
