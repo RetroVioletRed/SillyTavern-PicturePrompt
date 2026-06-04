@@ -884,6 +884,7 @@ function onPersonaChanged(avatarId) {
     const $panel = $('.persona_management_current_persona');
     if (!$panel.length) return;
     renderIfPanelOpen();
+    refreshTokenEstimate();
 }
 
 /** Render images into a grid. @param images — array of {filename, label, objectUrl} */
@@ -950,6 +951,7 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
         if (entry) {
             entry.enabled = enabled;
             setMetaForPersona(targetAvatarId, metaList);
+            refreshTokenEstimate();
         }
     });
 
@@ -1073,6 +1075,7 @@ async function deleteExtraImage(avatarId, filename) {
 
         toastr.success('Image deleted');
         loadPersonaImagesForPanel(avatarId);
+        refreshTokenEstimate();
     } catch (err) {
         console.error('[Picture Prompt] Delete failed:', err);
         toastr.error('Delete failed. Check console for details.');
@@ -1124,13 +1127,14 @@ async function estimateImageTokens(dataUrl, quality) {
 
 /**
  * Estimate total tokens for all images that will be injected.
- * @returns {Promise<{low: number, high: number, imageCount: number}>}
+ * @returns {Promise<{low: number, high: number, auto: number, imageCount: number}>}
  */
 async function getTotalImageTokenEstimate() {
     const s = getSettings();
     const quality = oai_settings?.inline_image_quality || 'auto';
     let totalLow = 0;
     let totalHigh = 0;
+    let totalAuto = 0;
     let imageCount = 0;
 
     // Character avatar
@@ -1141,6 +1145,7 @@ async function getTotalImageTokenEstimate() {
             if (b64) {
                 totalLow += await estimateImageTokens(b64, 'low');
                 totalHigh += await estimateImageTokens(b64, 'high');
+                totalAuto += await estimateImageTokens(b64, 'auto');
                 imageCount++;
             }
         }
@@ -1154,6 +1159,7 @@ async function getTotalImageTokenEstimate() {
             if (b64) {
                 totalLow += await estimateImageTokens(b64, 'low');
                 totalHigh += await estimateImageTokens(b64, 'high');
+                totalAuto += await estimateImageTokens(b64, 'auto');
                 imageCount++;
             }
         }
@@ -1165,6 +1171,7 @@ async function getTotalImageTokenEstimate() {
         for (const img of extras) {
             totalLow += await estimateImageTokens(img.dataUrl, 'low');
             totalHigh += await estimateImageTokens(img.dataUrl, 'high');
+            totalAuto += await estimateImageTokens(img.dataUrl, 'auto');
             imageCount++;
         }
     }
@@ -1189,6 +1196,7 @@ async function getTotalImageTokenEstimate() {
                         if (b64) {
                             totalLow += await estimateImageTokens(b64, 'low');
                             totalHigh += await estimateImageTokens(b64, 'high');
+                            totalAuto += await estimateImageTokens(b64, 'auto');
                             imageCount++;
                         }
                     }
@@ -1197,7 +1205,7 @@ async function getTotalImageTokenEstimate() {
         }
     }
 
-    return { low: totalLow, high: totalHigh, imageCount };
+    return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
 
 let _tokenEstimateTimeout = null;
@@ -1249,8 +1257,8 @@ async function refreshTokenEstimate() {
                     // High detail: exact tile-based cost
                     $el.text(`${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
                 } else {
-                    // Auto: show range but make it clear why
-                    $el.text(`${est.low}–${est.high} tokens`).css('color', 'var(--warning-color, #e8a838)');
+                    // Auto: exact per-image cost (we measure actual image sizes)
+                    $el.text(`${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
                 }
                 $detail.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
             }
