@@ -1201,6 +1201,18 @@ let _tokenEstimateTimer = null;
 let _tokenEstimateRunning = false;
 
 function refreshTokenEstimate() {
+    // Show instant feedback — the debounced call will replace this with the result
+    const $el = $('#picture_prompt_token_estimate');
+    const $detail = $('#picture_prompt_token_breakdown');
+    const s = getSettings();
+    if (!$el.length) return;
+    if (!s.enabled) {
+        $el.text('disabled').css('color', 'var(--text-color-dim)');
+        $detail.text('');
+        return;
+    }
+    $el.text('calculating...').css('color', 'var(--text-color-dim)');
+
     // Debounce: squash cascading events (PERSONA_CHANGED + SETTINGS_UPDATED, etc.)
     if (_tokenEstimateTimer) clearTimeout(_tokenEstimateTimer);
     _tokenEstimateTimer = setTimeout(_doRefreshTokenEstimate, 500);
@@ -1221,8 +1233,6 @@ async function _doRefreshTokenEstimate() {
             $detail.text('');
             return;
         }
-
-        $el.text('calculating...').css('color', 'var(--text-color-dim)');
 
         try {
             const est = await getTotalImageTokenEstimate();
