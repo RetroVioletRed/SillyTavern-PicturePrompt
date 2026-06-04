@@ -1208,15 +1208,19 @@ async function getTotalImageTokenEstimate() {
     return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
 
-let _tokenEstimateTimeout = null;
+let _tokenEstimateRunning = false;
 
 async function refreshTokenEstimate() {
-    // Debounce: avoid recalculating on every keystroke
-    if (_tokenEstimateTimeout) clearTimeout(_tokenEstimateTimeout);
-    _tokenEstimateTimeout = setTimeout(async () => {
+    // Prevent concurrent calculations — PERSONA_CHANGED + SETTINGS_UPDATED
+    // often fire together; the second call produces the same result anyway.
+    if (_tokenEstimateRunning) return;
+    _tokenEstimateRunning = true;
+    try {
         const $el = $('#picture_prompt_token_estimate');
         const $detail = $('#picture_prompt_token_breakdown');
-        if (!$el.length) return;
+        if (!$el.length) {
+            return;
+        }
 
         const s = getSettings();
         if (!s.enabled) {
@@ -1236,7 +1240,6 @@ async function refreshTokenEstimate() {
                 const quality = oai_settings?.inline_image_quality || 'auto';
                 const provider = main_api;
                 
-                // Build a context label showing provider + detail level
                 let contextLabel = '';
                 if (provider === 'openai') {
                     if (quality === 'low') contextLabel = 'OpenAI · low detail';
@@ -1251,13 +1254,10 @@ async function refreshTokenEstimate() {
                 }
                 
                 if (quality === 'low') {
-                    // Low detail: exact cost
                     $el.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
                 } else if (quality === 'high') {
-                    // High detail: exact tile-based cost
                     $el.text(`${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
                 } else {
-                    // Auto: exact per-image cost (we measure actual image sizes)
                     $el.text(`${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
                 }
                 $detail.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
@@ -1267,7 +1267,9 @@ async function refreshTokenEstimate() {
             $el.text('error').css('color', 'var(--error-color, #e55)');
             $detail.text('');
         }
-    }, 300);
+    } finally {
+        _tokenEstimateRunning = false;
+    }
 }
 
 /**
