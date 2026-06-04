@@ -12,6 +12,7 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 - **Per-image on/off toggle** — individually enable or disable which extra images get injected, without deleting them
 - **System prompt injection** — injects into the system message on every response
 - **Custom labels** — describe each image to your model however fits your scene
+- **Token estimation** — the extension estimates how many tokens will be used with your current settings automatically
 
 ## Requirements
 
@@ -59,7 +60,7 @@ Right, the extension works in the background and shows your images only to your 
 If you use OpenAI-compatible Chat Completion, yes. Ollama, vLLM, KoboldCpp, llama.cpp — they all work.
 
 **"How many tokens does this cost me?"**  
-Around 500-2000 tokens per image, mostly depending on resolution. Stick with the "low" quality setting if you want to save some.
+It depends. The extension displays token count automatically in the settings. Aproximate cost will be around 500-2000 tokens per image. Stick with the "low" quality setting if you want to save some.
 
 **"How do i add extra images to my persona?"**  
 You go to Persona Management → Your persona → Extra Images → Upload Image. Extra images are saved per persona and injecting to the system message at each reques.
