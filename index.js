@@ -1474,6 +1474,18 @@ export async function activate() {
     eventSource.on(event_types.SETTINGS_UPDATED, () => refreshTokenEstimate());
     startPersonaPanelWatcher();
     startGalleryWatcher();
+
+    // Show 'calculating...' immediately on chat-block click — ST's CHAT_CHANGED
+    // fires late (after chat data loads), so this bridges the visual gap.
+    $(document).on('click', '.select_chat_block', (e) => {
+        // Don't fire on action buttons (rename, delete, export) inside the block
+        if ($(e.target).closest('.PastChat_cross, .exportRawChatButton, .exportChatButton, .renameChatButton').length) return;
+        const $el = $('#picture_prompt_token_estimate');
+        if ($el.length && getSettings().enabled) {
+            $el.text('calculating...').css('color', 'var(--text-color-dim)');
+        }
+    });
+
     console.debug('[Picture Prompt] Activated');
     refreshTokenEstimate();
 }
