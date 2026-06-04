@@ -60,7 +60,7 @@ Right, the extension works in the background and shows your images only to your 
 If you use OpenAI-compatible Chat Completion, yes. Ollama, vLLM, KoboldCpp, llama.cpp — they all work.
 
 **"How many tokens does this cost me?"**  
-It depends. The extension displays token count automatically in the settings. Aproximate cost will be around 500-2000 tokens per image. Stick with the "low" quality setting if you want to save some.
+It depends. The extension displays token count automatically in the settings. The approximate cost will be around 500-2000 tokens per image. Stick with the "low" quality setting if you want to save some.
 
 **"How do i add extra images to my persona?"**  
 You go to Persona Management → Your persona → Extra Images → Upload Image. Extra images are saved per persona and injecting to the system message at each reques.
