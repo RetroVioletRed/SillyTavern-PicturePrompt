@@ -876,6 +876,7 @@ function onPersonaChanged(avatarId) {
     const $panel = $('.persona_management_current_persona');
     if (!$panel.length) return;
     renderIfPanelOpen();
+    refreshTokenEstimate();
 }
 
 /** Render images into a grid. @param images — array of {filename, label, objectUrl} */
@@ -1200,6 +1201,15 @@ async function getTotalImageTokenEstimate() {
 let _tokenEstimateRunning = false;
 let _tokenEstimatePending = false;
 
+/** Show 'calculating...' instantly — call this BEFORE refreshTokenEstimate()
+ *  from early hooks (click, MutationObserver) that fire before ST's events. */
+function showCalculating() {
+    const $el = $('#picture_prompt_token_estimate');
+    if ($el.length && getSettings().enabled) {
+        $el.text('calculating...').css('color', 'var(--text-color-dim)');
+    }
+}
+
 async function refreshTokenEstimate() {
     // Guard: if already running, mark pending and bail — will re-run when done
     if (_tokenEstimateRunning) {
@@ -1475,16 +1485,30 @@ export async function activate() {
     startPersonaPanelWatcher();
     startGalleryWatcher();
 
-    // Show 'calculating...' immediately on chat-block click — ST's CHAT_CHANGED
-    // fires late (after chat data loads), so this bridges the visual gap.
+    // ── Early-visible 'calculating...' hooks ─────────────────────
+    // ST's event system fires late — these bridge the visual gap by
+    // showing 'calculating...' before the real estimate runs.
+
+    // Chat block clicks (chat switcher)
     $(document).on('click', '.select_chat_block', (e) => {
-        // Don't fire on action buttons (rename, delete, export) inside the block
         if ($(e.target).closest('.PastChat_cross, .exportRawChatButton, .exportChatButton, .renameChatButton').length) return;
-        const $el = $('#picture_prompt_token_estimate');
-        if ($el.length && getSettings().enabled) {
-            $el.text('calculating...').css('color', 'var(--text-color-dim)');
-        }
+        showCalculating();
     });
+
+    // Persona dropdown changes — fires before PERSONA_CHANGED event
+    if (typeof MutationObserver !== 'undefined') {
+        const personaObs = new MutationObserver(() => showCalculating());
+        // Observe after a short delay — the dropdown may not be in DOM yet
+        const tryObservePersona = () => {
+            const $dd = $('#persona-management-dropdown');
+            if ($dd.length) {
+                personaObs.observe($dd[0], { subtree: true, childList: true, characterData: true });
+            } else {
+                setTimeout(tryObservePersona, 200);
+            }
+        };
+        setTimeout(tryObservePersona, 100);
+    }
 
     console.debug('[Picture Prompt] Activated');
     refreshTokenEstimate();
