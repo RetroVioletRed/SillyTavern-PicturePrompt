@@ -339,6 +339,7 @@ function toggleCharGalleryImage(filename) {
     setCharGalleryMeta(avatarId, meta);
     // Refresh visual state on thumbnails
     applyCharGallerySelections();
+    refreshTokenEstimate();
 }
 
 /**
@@ -599,6 +600,7 @@ function onGalleryOpened() {
                 placeInjectOverlays();
             }
             watchGalleryContent();
+            refreshTokenEstimate();
         }, 300);
     }, 100);
 }
@@ -1224,12 +1226,33 @@ async function refreshTokenEstimate() {
                 $detail.text('');
             } else {
                 const quality = oai_settings?.inline_image_quality || 'auto';
-                if (quality === 'low') {
-                    $el.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
+                const provider = main_api;
+                
+                // Build a context label showing provider + detail level
+                let contextLabel = '';
+                if (provider === 'openai') {
+                    if (quality === 'low') contextLabel = 'OpenAI · low detail';
+                    else if (quality === 'high') contextLabel = 'OpenAI · high detail';
+                    else contextLabel = 'OpenAI · auto detail';
+                } else if (provider === 'anthropic') {
+                    contextLabel = 'Claude · pixel-based';
+                } else if (provider === 'google') {
+                    contextLabel = 'Gemini · tiled';
                 } else {
-                    $el.text(`${est.low}–${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
+                    contextLabel = quality === 'low' ? 'Low detail' : quality === 'high' ? 'High detail' : 'Auto detail';
                 }
-                $detail.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · quality: ${quality}`);
+                
+                if (quality === 'low') {
+                    // Low detail: exact cost
+                    $el.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
+                } else if (quality === 'high') {
+                    // High detail: exact tile-based cost
+                    $el.text(`${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
+                } else {
+                    // Auto: show range but make it clear why
+                    $el.text(`${est.low}–${est.high} tokens`).css('color', 'var(--warning-color, #e8a838)');
+                }
+                $detail.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
             }
         } catch (err) {
             console.warn('[Picture Prompt] Token estimate failed:', err);
@@ -1433,6 +1456,7 @@ export async function activate() {
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
+    eventSource.on(event_types.CHAT_CHANGED, () => refreshTokenEstimate());
     startPersonaPanelWatcher();
     startGalleryWatcher();
     console.debug('[Picture Prompt] Activated');
