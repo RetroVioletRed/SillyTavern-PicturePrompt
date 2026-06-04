@@ -1260,11 +1260,11 @@ async function refreshTokenEstimate() {
             }
 
             if (quality === 'low') {
-                $el2.text(`${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
+                $el2.text(`≈ ${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
             } else if (quality === 'high') {
-                $el2.text(`${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
+                $el2.text(`≈ ${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
             } else {
-                $el2.text(`${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
+                $el2.text(`≈ ${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
             }
             $detail2.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
         }
