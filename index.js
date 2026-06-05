@@ -16,6 +16,8 @@ import {
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
+import { initLorebookInject, injectLorebookImages } from './lorebook-inject.js';
+import { initLorebookUI } from './lorebook-ui.js';
 
 // ── User Feedback ─────────────────
 
@@ -178,6 +180,8 @@ const defaultSettings = {
     maxExtraImages: 8,
     charExtraImagesEnabled: false,
     charExtraImagesMax: 8,
+    lorebookImagesEnabled: false,
+    lorebookImagesMax: 4,
 };
 
 function migrateOldSettings() {
@@ -217,6 +221,8 @@ function applySettingsToUI() {
     $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
     $('#picture_prompt_char_extra_enabled').prop('checked', s.charExtraImagesEnabled ?? false);
     $('#picture_prompt_char_extra_max').val(s.charExtraImagesMax ?? 8);
+    $('#picture_prompt_lorebook_enabled').prop('checked', s.lorebookImagesEnabled ?? false);
+    $('#picture_prompt_lorebook_max').val(s.lorebookImagesMax ?? 4);
     refreshTokenEstimate();
 }
 
@@ -251,6 +257,14 @@ function registerSettingsListeners() {
     });
     $('#picture_prompt_char_extra_max').on('input', function () {
         getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_lorebook_enabled').on('change', function () {
+        getSettings().lorebookImagesEnabled = !!$(this).prop('checked');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_lorebook_max').on('input', function () {
+        getSettings().lorebookImagesMax = parseInt($(this).val(), 10) || 4;
         getContext().saveSettingsDebounced();
     });
 }
@@ -1195,6 +1209,8 @@ async function getTotalImageTokenEstimate() {
         }
     }
 
+    // Lorebook images — token count varies by active entries; not included in estimate
+
     return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
 
@@ -1379,6 +1395,11 @@ async function onPromptReady(eventData) {
         await injectCharGalleryImages(msg, quality);
     }
 
+    // Lorebook images — images from triggered world info entries
+    if (s.lorebookImagesEnabled) {
+        await injectLorebookImages(msg, quality);
+    }
+
     // Inject persona avatar
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
@@ -1484,6 +1505,8 @@ export async function activate() {
     eventSource.on(event_types.SETTINGS_UPDATED, () => refreshTokenEstimate());
     startPersonaPanelWatcher();
     startGalleryWatcher();
+    initLorebookUI();
+    initLorebookInject();
 
     // ── Early-visible 'calculating...' hooks ─────────────────────
     // ST's event system fires late — these bridge the visual gap by
