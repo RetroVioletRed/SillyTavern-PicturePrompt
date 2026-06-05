@@ -186,6 +186,26 @@ function liMetaKey(worldName, entryUid) {
 }
 
 /**
+ * Resolve the effective key for an entry, trying the exact worldName first
+ * then falling back to a suffix search (entryUid may have been stored under
+ * a slightly different world name — e.g. UI dropdown vs. entry.world).
+ * @param {string} worldName
+ * @param {string|number} entryUid
+ * @returns {string|null}
+ */
+function resolveKey(worldName, entryUid) {
+    const store = ensureLIMeta();
+    const exact = liMetaKey(worldName, entryUid);
+    if (store[exact]) return exact;
+    // Fallback: search for any key ending with ::entryUid
+    const suffix = `::${entryUid}`;
+    for (const k of Object.keys(store)) {
+        if (k.endsWith(suffix)) return k;
+    }
+    return exact; // return exact key even if not found (for write operations)
+}
+
+/**
  * Ensure the lorebook images namespace exists in extension_settings.
  * @returns {object} The lorebookImages object.
  */
@@ -209,7 +229,7 @@ export function ensureLIMeta() {
  */
 export function getLorebookImages(worldName, entryUid) {
     const store = ensureLIMeta();
-    const key = liMetaKey(worldName, entryUid);
+    const key = resolveKey(worldName, entryUid);
     const list = store[key];
     return Array.isArray(list) ? list : [];
 }
@@ -261,7 +281,7 @@ export function removeLorebookImage(worldName, entryUid, filename) {
  */
 export function toggleLorebookImage(worldName, entryUid, filename) {
     const store = ensureLIMeta();
-    const key = liMetaKey(worldName, entryUid);
+    const key = resolveKey(worldName, entryUid);
     const list = store[key];
     if (!Array.isArray(list)) return;
     const image = list.find(img => img.filename === filename);
@@ -282,7 +302,7 @@ export function toggleLorebookImage(worldName, entryUid, filename) {
  */
 export function updateLorebookImageLabel(worldName, entryUid, filename, newLabel) {
     const store = ensureLIMeta();
-    const key = liMetaKey(worldName, entryUid);
+    const key = resolveKey(worldName, entryUid);
     const list = store[key];
     if (!Array.isArray(list)) return;
     const image = list.find(img => img.filename === filename);
