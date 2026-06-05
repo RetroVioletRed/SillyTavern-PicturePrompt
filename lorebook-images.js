@@ -166,88 +166,129 @@ export async function listLorebookImages(worldName, entryUid) {
     });
 }
 
-// ── Entry Metadata Accessors ─────────────
+// ── Lorebook Image Metadata (extension_settings) ─
 
 /**
- * Get the `picturePromptImages` array from a world info entry object.
- * Returns a new empty array if the property does not exist (does NOT mutate the entry).
+ * Storage key prefix for lorebook image metadata.
+ * Stored as `extension_settings.picture_prompt.lorebookImages`.
+ * @type {string}
+ */
+const LI_NAMESPACE = 'lorebookImages';
+
+/**
+ * Build the metadata key for a lorebook entry.
+ * @param {string} worldName
+ * @param {string|number} entryUid
+ * @returns {string}
+ */
+function liMetaKey(worldName, entryUid) {
+    return `${worldName}::${entryUid}`;
+}
+
+/**
+ * Ensure the lorebook images namespace exists in extension_settings.
+ * @returns {object} The lorebookImages object.
+ */
+export function ensureLIMeta() {
+    if (!extension_settings[MODULE_NAME]) {
+        extension_settings[MODULE_NAME] = {};
+    }
+    if (!extension_settings[MODULE_NAME][LI_NAMESPACE]) {
+        extension_settings[MODULE_NAME][LI_NAMESPACE] = {};
+    }
+    return extension_settings[MODULE_NAME][LI_NAMESPACE];
+}
+
+/**
+ * Get the image metadata list for a lorebook entry.
+ * Each item has the shape: `{filename: string, label: string, enabled: boolean}`.
  *
- * Each entry item has the shape: `{filename: string, label: string, enabled: boolean}`.
- *
- * @param {object} entry - A world info entry object (plain object from world_info data).
+ * @param {string}          worldName
+ * @param {string|number}   entryUid
  * @returns {Array<{filename: string, label: string, enabled: boolean}>}
  */
-export function getEntryImages(entry) {
-    if (!entry || !Array.isArray(entry.picturePromptImages)) {
-        return [];
-    }
-    return entry.picturePromptImages;
+export function getLorebookImages(worldName, entryUid) {
+    const store = ensureLIMeta();
+    const key = liMetaKey(worldName, entryUid);
+    const list = store[key];
+    return Array.isArray(list) ? list : [];
 }
 
 /**
- * Set the `picturePromptImages` array on a world info entry (mutates in-place).
+ * Add an image record to a lorebook entry's metadata.
+ * Does nothing if `filename` already exists.
  *
- * @param {object}  entry  - A world info entry object (mutated in-place).
- * @param {Array<{filename: string, label: string, enabled: boolean}>} images
+ * @param {string}          worldName
+ * @param {string|number}   entryUid
+ * @param {string}          filename
+ * @param {string}          label
  * @returns {void}
  */
-export function setEntryImages(entry, images) {
-    if (!entry) return;
-    entry.picturePromptImages = Array.isArray(images) ? images : [];
+export function addLorebookImage(worldName, entryUid, filename, label) {
+    const store = ensureLIMeta();
+    const key = liMetaKey(worldName, entryUid);
+    const list = Array.isArray(store[key]) ? store[key] : [];
+    if (list.some(img => img.filename === filename)) return;
+    list.push({ filename, label: label || '', enabled: true });
+    store[key] = list;
+    saveSettingsDebounced();
 }
 
 /**
- * Add an image record to a world info entry's `picturePromptImages` array.
- * Does nothing if `filename` already exists in the array.
- * Mutates the entry in-place.
+ * Remove an image record from a lorebook entry's metadata by filename.
  *
- * @param {object} entry    - A world info entry object (mutated in-place).
- * @param {string} filename - Image filename.
- * @param {string} label    - Display label.
+ * @param {string}          worldName
+ * @param {string|number}   entryUid
+ * @param {string}          filename
  * @returns {void}
  */
-export function addEntryImage(entry, filename, label) {
-    if (!entry) return;
-    const images = getEntryImages(entry);
-
-    // Prevent duplicates
-    if (images.some(img => img.filename === filename)) return;
-
-    entry.picturePromptImages = [
-        ...images,
-        { filename, label: label || '', enabled: true },
-    ];
+export function removeLorebookImage(worldName, entryUid, filename) {
+    const store = ensureLIMeta();
+    const key = liMetaKey(worldName, entryUid);
+    if (!Array.isArray(store[key])) return;
+    store[key] = store[key].filter(img => img.filename !== filename);
+    saveSettingsDebounced();
 }
 
 /**
- * Remove an image record from a world info entry's `picturePromptImages` array
- * by filename. Mutates the entry in-place.
- *
- * @param {object} entry    - A world info entry object (mutated in-place).
- * @param {string} filename - Image filename to remove.
- * @returns {void}
- */
-export function removeEntryImage(entry, filename) {
-    if (!entry || !Array.isArray(entry.picturePromptImages)) return;
-    entry.picturePromptImages = entry.picturePromptImages.filter(
-        img => img.filename !== filename,
-    );
-}
-
-/**
- * Toggle the `enabled` flag of an image record on a world info entry.
+ * Toggle the `enabled` flag of an image record for a lorebook entry.
  * Does nothing if the filename is not found.
- * Mutates the entry in-place.
  *
- * @param {object} entry    - A world info entry object (mutated in-place).
- * @param {string} filename - Image filename to toggle.
+ * @param {string}          worldName
+ * @param {string|number}   entryUid
+ * @param {string}          filename
  * @returns {void}
  */
-export function toggleEntryImage(entry, filename) {
-    if (!entry || !Array.isArray(entry.picturePromptImages)) return;
-    const image = entry.picturePromptImages.find(img => img.filename === filename);
+export function toggleLorebookImage(worldName, entryUid, filename) {
+    const store = ensureLIMeta();
+    const key = liMetaKey(worldName, entryUid);
+    const list = store[key];
+    if (!Array.isArray(list)) return;
+    const image = list.find(img => img.filename === filename);
     if (image) {
         image.enabled = !image.enabled;
+        saveSettingsDebounced();
+    }
+}
+
+/**
+ * Update the label of an image record in the metadata.
+ *
+ * @param {string}          worldName
+ * @param {string|number}   entryUid
+ * @param {string}          filename
+ * @param {string}          newLabel
+ * @returns {void}
+ */
+export function updateLorebookImageLabel(worldName, entryUid, filename, newLabel) {
+    const store = ensureLIMeta();
+    const key = liMetaKey(worldName, entryUid);
+    const list = store[key];
+    if (!Array.isArray(list)) return;
+    const image = list.find(img => img.filename === filename);
+    if (image) {
+        image.label = newLabel;
+        saveSettingsDebounced();
     }
 }
 

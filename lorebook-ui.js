@@ -8,70 +8,20 @@
  * @module lorebook-ui
  */
 
-import { worldInfoCache, saveWorldInfo } from '../../../world-info.js';
 import {
     getLorebookImage,
     putLorebookImage,
     deleteLorebookImage as deleteLorebookImageDb,
-    getEntryImages,
-    setEntryImages,
-    addEntryImage,
-    removeEntryImage,
-    toggleEntryImage,
+    getLorebookImages,
+    addLorebookImage as addLorebookImageMeta,
+    removeLorebookImage as removeLorebookImageMeta,
+    toggleLorebookImage as toggleLorebookImageMeta,
+    updateLorebookImageLabel,
+    ensureLIMeta,
 } from './lorebook-images.js';
 // ── Module Name ───────────────────────────────
 
 const moduleName = 'picture_prompt';
-
-// ── Entry Object Accessors ─────────────────────
-
-/**
- * Find an entry by UID across all loaded world info.
- * @param {string|number} entryUid
- * @returns {{worldName: string, entry: object}|null}
- */
-function findEntry(entryUid) {
-    for (const worldName of worldInfoCache.keys()) {
-        const data = worldInfoCache.get(worldName);
-        if (data?.entries?.[entryUid]) {
-            return { worldName, entry: data.entries[entryUid], data };
-        }
-    }
-    return null;
-}
-
-/**
- * Get a world info entry by world name and UID.
- * Falls back to searching all worlds if the exact worldName doesn't match.
- * @param {string} worldName
- * @param {string|number} entryUid
- * @returns {{entry: object, data: object, worldName: string}|null}
- */
-function getEntryData(worldName, entryUid) {
-    const data = worldInfoCache.get(worldName);
-    if (data?.entries?.[entryUid]) return { worldName, entry: data.entries[entryUid], data };
-    // Fallback: search all worlds (UI name may differ from internal key)
-    const found = findEntry(entryUid);
-    return found ? { worldName: found.worldName, entry: found.entry, data: found.data } : null;
-}
-
-/**
- * Get just the entry object (convenience wrapper).
- */
-function getEntry(worldName, entryUid) {
-    const result = getEntryData(worldName, entryUid);
-    return result ? result.entry : null;
-}
-
-/**
- * Save the world info data object. Call this with the SAME data object
- * returned by getEntryData — do not fetch a fresh clone.
- * @param {object} data - the data object from getEntryData
- * @param {string} worldName
- */
-function saveEntryData(data, worldName) {
-    saveWorldInfo(worldName, data);
-}
 
 // ── World Name Extraction ─────────────────────
 
@@ -170,11 +120,7 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
     // ── Toggle handler ──
     $grid.find('.pp-img-toggle').off('change').on('change', function () {
         const filename = $(this).data('filename');
-        const enabled = $(this).prop('checked');
-        const ed = getEntryData(worldName, entryUid);
-        if (!ed) return;
-        toggleEntryImage(ed.entry, filename, enabled);
-        saveEntryData(ed.data, ed.worldName);
+        toggleLorebookImageMeta(worldName, entryUid, filename);
     });
 
     // ── Inline label editing (double-click) ──
@@ -196,14 +142,7 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
         const $card = $overlay.closest('.picture-prompt-image-card');
         const filename = $card.data('filename');
         const newLabel = $input.val().trim();
-        const ed = getEntryData(worldName, entryUid);
-        if (!ed) return;
-        const images = getEntryImages(ed.entry);
-        const metaEntry = images.find(m => m.filename === filename);
-        if (metaEntry) {
-            metaEntry.label = newLabel;
-            saveEntryData(ed.data, ed.worldName);
-        }
+        updateLorebookImageLabel(worldName, entryUid, filename, newLabel);
         const displayText = newLabel || filename;
         $overlay.removeClass('pp-editing').text(displayText);
     });
@@ -328,17 +267,8 @@ export function refreshLorebookSection(worldName, entryUid) {
         return;
     }
 
-    const entry = getEntry(worldName, entryUid);
-    if (!entry) {
-        console.debug('[PP-Lorebook] refresh: getEntry returned null for', worldName, entryUid);
-        if ($grid.length) $grid.empty().hide();
-        if ($empty.length) $empty.show();
-        const $count = $section.find('.pp-li-count');
-        if ($count.length) $count.text('0');
-        return;
-    }
-    const metaList = getEntryImages(entry);
-    console.debug('[PP-Lorebook] refresh: entry found, picturePromptImages count:', metaList.length, JSON.stringify(metaList));
+    const metaList = getLorebookImages(worldName, entryUid);
+    console.debug('[PP-Lorebook] refresh: worldName=', worldName, 'entryUid=', entryUid, 'images count:', metaList.length);
 
     if (metaList.length === 0) {
         if ($grid.length) $grid.empty().hide();
@@ -424,15 +354,8 @@ async function uploadLorebookImage(worldName, entryUid, file) {
 
         await putLorebookImage(worldName, entryUid, filename, blob, label);
 
-        // Save metadata to the entry
-        const ed = getEntryData(worldName, entryUid);
-        if (!ed) {
-            console.error('[PP-Lorebook] getEntryData returned null — worldInfoCache may not be loaded. worldName:', worldName, 'entryUid:', entryUid, 'cache keys:', [...worldInfoCache.keys()]);
-            toastr.error('Could not save image metadata. Try reopening the entry editor.');
-            return;
-        }
-        addEntryImage(ed.entry, filename, label);
-        saveEntryData(ed.data, ed.worldName);
+        // Save metadata to extension_settings (survives ST's entry editor saves)
+        addLorebookImageMeta(worldName, entryUid, filename, label);
 
         toastr.success(`Uploaded "${filename}"`);
         refreshLorebookSection(worldName, entryUid);
@@ -445,13 +368,13 @@ async function uploadLorebookImage(worldName, entryUid, file) {
 // Debug helper — call from console: PP_Lorebook.debug()
 window.PP_Lorebook = {
     debug() {
-        const keys = [...worldInfoCache.keys()];
-        console.log('[PP-Lorebook] worldInfoCache keys:', keys);
+        const meta = ensureLIMeta();
+        const keys = Object.keys(meta);
+        console.log('[PP-Lorebook] lorebookImages metadata keys:', keys);
         for (const k of keys) {
-            const data = worldInfoCache.get(k);
-            console.log(`[PP-Lorebook]   ${k}: entries=${Object.keys(data?.entries || {}).length}`);
+            console.log(`[PP-Lorebook]   ${k}: ${meta[k].length} image(s)`);
         }
-        toastr.info(`worldInfoCache has ${keys.length} worlds: ${keys.join(', ') || '(none)'}`, 'PP Debug');
+        toastr.info(`lorebookImages has ${keys.length} entries: ${keys.join(', ') || '(none)'}`, 'PP Debug');
     }
 };
 
@@ -466,11 +389,7 @@ async function deleteLorebookImage(worldName, entryUid, filename) {
         await deleteLorebookImageDb(worldName, entryUid, filename);
 
         // Remove from metadata
-        const ed = getEntryData(worldName, entryUid);
-        if (ed) {
-            removeEntryImage(ed.entry, filename);
-            saveEntryData(ed.data, ed.worldName);
-        }
+        removeLorebookImageMeta(worldName, entryUid, filename);
 
         // Revoke any object URLs for this image
         const $card = $(`.pp-lorebook-images[data-entry-uid="${escapeHtml(String(entryUid))}"] .picture-prompt-image-card[data-filename="${escapeHtml(filename)}"]`);

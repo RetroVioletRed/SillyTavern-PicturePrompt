@@ -4,7 +4,7 @@ import {
 } from '../../../events.js';
 import {
     getLorebookSettings,
-    getEntryImages,
+    getLorebookImages,
     getLorebookImage,
 } from './lorebook-images.js';
 
@@ -71,7 +71,7 @@ export async function injectLorebookImages(msg, quality) {
         if (injectedCount >= maxTotal) break;
 
         /** @type {Array<{filename?: string, enabled?: boolean, label?: string}>|undefined} */
-        const images = getEntryImages(entry);
+        const images = getLorebookImages(entry.world || '', String(entry.uid));
         if (!images || images.length === 0) {
             console.debug(`[PP-Lorebook] Entry ${key} has no picturePromptImages — skipping`);
             continue;
