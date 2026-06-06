@@ -16,9 +16,9 @@ import {
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
-import { initLorebookInject, injectLorebookImages } from './lorebook-inject.js';
+import { initLorebookInject, injectLorebookImages, getCachedActiveEntries } from './lorebook-inject.js';
 import { initLorebookUI } from './lorebook-ui.js';
-import { openDB, blobToDataURL, escapeHtml } from './lorebook-images.js';
+import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImage } from './lorebook-images.js';
 
 // ── User Feedback ─────────────────
 
@@ -1206,7 +1206,34 @@ async function getTotalImageTokenEstimate() {
         }
     }
 
-    // Lorebook images — token count varies by active entries; not included in estimate
+    // Lorebook images — iterate cached active entries
+    if (s.lorebookImagesEnabled) {
+        const lbSettings = getLorebookSettings();
+        const entries = getCachedActiveEntries();
+        let lbInjected = 0;
+        const lbMax = lbSettings.lorebookImagesMax || 4;
+        for (const [key, entry] of entries) {
+            if (lbInjected >= lbMax) break;
+            const images = getLorebookImages(entry.world || '', String(entry.uid));
+            const enabledImages = images.filter(img => img.enabled !== false);
+            for (const img of enabledImages) {
+                if (lbInjected >= lbMax) break;
+                try {
+                    const record = await getLorebookImage(entry.world || '', String(entry.uid), img.filename);
+                    if (record?.blob) {
+                        const b64 = await blobToDataURL(record.blob);
+                        if (b64) {
+                            totalLow += await estimateImageTokens(b64, 'low');
+                            totalHigh += await estimateImageTokens(b64, 'high');
+                            totalAuto += await estimateImageTokens(b64, 'auto');
+                            imageCount++;
+                            lbInjected++;
+                        }
+                    }
+                } catch { /* skip individual failures */ }
+            }
+        }
+    }
 
     return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
@@ -1336,7 +1363,7 @@ async function urlToBase64(url) {
 function findMessageTarget(chat) {
     const system = chat.find(m => m.role === 'system');
     if (system) return system;
-    return chat.find(m => m.role === 'user') || chat[0];
+    return chat.find(m => m.role === 'user') || null;
 }
 
 function ensureContentBlocks(msg) {
@@ -1372,6 +1399,7 @@ async function onPromptReady(eventData) {
     if (!chat?.length) return;
 
     const msg = findMessageTarget(chat);
+    if (!msg) return;
     if (!ensureContentBlocks(msg)) return;
 
     const quality = oai_settings?.inline_image_quality || 'auto';
@@ -1392,7 +1420,7 @@ async function onPromptReady(eventData) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                if (label) getFirstTextBlock(msg).text += '\n' + label;
+                if (label) msg.content.push({ type: 'text', text: '\n' + label });
                 msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
@@ -1419,7 +1447,7 @@ async function onPromptReady(eventData) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                if (label) getFirstTextBlock(msg).text += '\n' + label;
+                if (label) msg.content.push({ type: 'text', text: '\n' + label });
                 msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
