@@ -18,6 +18,7 @@ import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
 import { initLorebookInject, injectLorebookImages } from './lorebook-inject.js';
 import { initLorebookUI } from './lorebook-ui.js';
+import { openDB, blobToDataURL, escapeHtml } from './lorebook-images.js';
 
 // ── User Feedback ─────────────────
 
@@ -61,20 +62,6 @@ function getPersonaAvatarUrl() {
 const DB_NAME = 'PicturePrompt';
 const DB_VERSION = 1;
 const STORE_NAME = 'extraImages';
-
-/** @returns {Promise<IDBDatabase>} */
-function openDB() {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains(STORE_NAME)) {
-                req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
 
 /**
  * @param {string} id - "avatarId::filename"
@@ -141,16 +128,6 @@ async function dbDeleteAllForPersona(avatarId) {
     for (const id of ids) {
         await dbDelete(id);
     }
-}
-
-/** @param {Blob} blob @returns {Promise<string>} data URL */
-function blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
 }
 
 /**
@@ -517,10 +494,9 @@ function attachGalleryLabelButtons() {
         $btn.addClass('visible');
     }, true);
 
-    // Hide on mouseleave
+    // Hide on mouseleave — mouseleave fires on the gallery itself,
+    // so we check if any thumbnail is still hovered before hiding.
     gallery.addEventListener('mouseleave', function onLeave(e) {
-        const thumb = e.target.closest('.nGY2GThumbnail');
-        if (!thumb) return;
         setTimeout(() => {
             if (_editing) return;
             const hovered = gallery.querySelector('.nGY2GThumbnail:hover');
@@ -742,6 +718,23 @@ let _pp_panelRendered = false;
 function startPersonaPanelWatcher() {
     const $content = $('#PersonaManagement');
     if (!$content.length) {
+        // Retry up to ~30s for the persona panel to appear in DOM.
+        // The MutationObserver approach catches it immediately when it does,
+        // but we need a fallback in case it never fires.
+        let retries = 0;
+        const maxRetries = 15;
+        const check = () => {
+            if ($('#PersonaManagement').length) {
+                startPersonaPanelWatcher();
+                return;
+            }
+            if (++retries < maxRetries) {
+                setTimeout(check, 2000);
+            } else {
+                console.debug('[Picture Prompt] Persona panel never appeared — watcher not started');
+            }
+        };
+        // MutationObserver for early detection, retry timer as fallback
         const observer = new MutationObserver((_mutations, obs) => {
             if ($('#PersonaManagement').length) {
                 obs.disconnect();
@@ -749,7 +742,7 @@ function startPersonaPanelWatcher() {
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 2000);
+        setTimeout(check, 2000);
         return;
     }
 
@@ -896,6 +889,10 @@ function onPersonaChanged(avatarId) {
 /** Render images into a grid. @param images — array of {filename, label, objectUrl} */
 function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarId = null) {
     const $grid = $(gridSelector);
+    // Revoke old blob URLs before clearing the grid
+    $grid.find('img[src^="blob:"]').each(function () {
+        URL.revokeObjectURL(this.src);
+    });
     $grid.empty();
 
     if (!images || images.length === 0) {
@@ -1347,8 +1344,23 @@ function ensureContentBlocks(msg) {
         msg.content = [{ type: 'text', text: msg.content }];
         return true;
     }
-    if (Array.isArray(msg.content)) return true;
+    if (Array.isArray(msg.content)) {
+        // Guard against empty content array — inject a text block
+        if (msg.content.length === 0) {
+            msg.content.push({ type: 'text', text: '' });
+        }
+        return true;
+    }
     return false;
+}
+
+/** Find the first text block in msg.content, or push a new one. */
+function getFirstTextBlock(msg) {
+    const block = msg.content.find(b => b.type === 'text');
+    if (block) return block;
+    const newBlock = { type: 'text', text: '' };
+    msg.content.push(newBlock);
+    return newBlock;
 }
 
 async function onPromptReady(eventData) {
@@ -1380,7 +1392,7 @@ async function onPromptReady(eventData) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                if (label) msg.content[0].text += '\n' + label;
+                if (label) getFirstTextBlock(msg).text += '\n' + label;
                 msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
@@ -1407,7 +1419,7 @@ async function onPromptReady(eventData) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                if (label) msg.content[0].text += '\n' + label;
+                if (label) getFirstTextBlock(msg).text += '\n' + label;
                 msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
@@ -1467,14 +1479,6 @@ async function injectCharGalleryImages(msg, quality) {
             console.debug('[Picture Prompt] Gallery image not found (may have been deleted):', filename);
         }
     }
-}
-
-// ── Helpers ───────────────────────
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
 }
 
 // ── Init ──────────────────

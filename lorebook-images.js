@@ -55,6 +55,8 @@ function openDB() {
     });
 }
 
+export { openDB };
+
 /**
  * Build the IndexedDB key for a lorebook image.
  * Pattern: `lorebook::{worldName}::{entryUid}::{filename}`
@@ -246,7 +248,7 @@ export function getLorebookImages(worldName, entryUid) {
  */
 export function addLorebookImage(worldName, entryUid, filename, label) {
     const store = ensureLIMeta();
-    const key = liMetaKey(worldName, entryUid);
+    const key = resolveKey(worldName, entryUid);
     const list = Array.isArray(store[key]) ? store[key] : [];
     if (list.some(img => img.filename === filename)) return;
     list.push({ filename, label: label || '', enabled: true });
@@ -264,7 +266,7 @@ export function addLorebookImage(worldName, entryUid, filename, label) {
  */
 export function removeLorebookImage(worldName, entryUid, filename) {
     const store = ensureLIMeta();
-    const key = liMetaKey(worldName, entryUid);
+    const key = resolveKey(worldName, entryUid);
     if (!Array.isArray(store[key])) return;
     store[key] = store[key].filter(img => img.filename !== filename);
     saveSettingsDebounced();
@@ -356,4 +358,32 @@ export function saveLorebookSettings(partial) {
         }
     }
     saveSettingsDebounced();
+}
+
+// ── Shared Utilities ──────────────────────
+
+/**
+ * Convert a Blob to a base64 data URL.
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+export function blobToDataURL(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+    });
+}
+
+/**
+ * HTML-escape a string for safe DOM insertion.
+ * @param {string} str
+ * @returns {string}
+ */
+export function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
 }

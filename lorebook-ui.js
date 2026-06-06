@@ -18,6 +18,7 @@ import {
     toggleLorebookImage as toggleLorebookImageMeta,
     updateLorebookImageLabel,
     ensureLIMeta,
+    escapeHtml,
 } from './lorebook-images.js';
 // ── Module Name ───────────────────────────────
 
@@ -39,15 +40,6 @@ function getActiveWorldName() {
     const $tab = $('.world_info_name, .world_info_title').first();
     if ($tab.length) return $tab.text().trim();
     return null;
-}
-
-// ── HTML Helpers ───────────────────────────────
-
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = String(str);
-    return div.innerHTML;
 }
 
 // ── Image Grid Rendering ──────────────────────
@@ -298,6 +290,10 @@ async function loadImagesForGrid(worldName, entryUid, metaList) {
 
     if (!$grid.length) return;
 
+    // Revoke old blob URLs before replacing grid content
+    $grid.find('img[src^="blob:"]').each(function () {
+        URL.revokeObjectURL(this.src);
+    });
     $grid.html('<span style="font-size:0.85em; color: var(--text-color-dim);">Loading...</span>');
     $grid.show();
     if ($empty.length) $empty.hide();
@@ -411,6 +407,7 @@ async function deleteLorebookImage(worldName, entryUid, filename) {
 // ── Mutation Observer ──────────────────────────
 
 let _lorebookObserver = null;
+let _lorebookScanInterval = null;
 
 /**
  * Start watching for world info entry editors being opened.
@@ -488,7 +485,7 @@ export function initLorebookUI() {
 
     // Re-scan periodically to catch editors that may have been missed
     // (some drawer content is populated asynchronously)
-    setInterval(scanExistingEditors, 3000);
+    _lorebookScanInterval = setInterval(scanExistingEditors, 3000);
 }
 
 /**

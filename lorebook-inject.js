@@ -6,6 +6,7 @@ import {
     getLorebookSettings,
     getLorebookImages,
     getLorebookImage,
+    blobToDataURL,
 } from './lorebook-images.js';
 
 // ── Active Entry Cache ─────────────────
@@ -24,22 +25,6 @@ let _activeEntries = new Map();
  */
 export function getCachedActiveEntries() {
     return _activeEntries;
-}
-
-// ── Blob Helper ─────────────────
-
-/**
- * Convert a Blob to a base64 data URL using FileReader.
- * @param {Blob} blob
- * @returns {Promise<string>}
- */
-export function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-    });
 }
 
 // ── Injection ─────────────────
@@ -96,7 +81,7 @@ export async function injectLorebookImages(msg, quality) {
                     continue;
                 }
 
-                const base64Data = await blobToBase64(record.blob);
+                const base64Data = await blobToDataURL(record.blob);
                 if (!base64Data) {
                     console.debug(`[PP-Lorebook] Failed to convert blob to base64 for entry ${key} — skipping`);
                     continue;
