@@ -55,7 +55,8 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
     const $container = $(container);
     const $grid = $container.find('.pp-lorebook-grid');
     const $empty = $container.find('.pp-lorebook-empty');
-    const $count = $container.find('.pp-li-count');
+    // .pp-li-count is in the header (sibling of content), not inside content
+    const $count = $container.closest('.pp-lorebook-images').find('.pp-li-count');
 
     // Update count
     if ($count.length) {
@@ -92,6 +93,9 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
                             <span class="pp-toggle-on">On</span>
                             <span class="pp-toggle-off">Off</span>
                         </label>
+                        <button type="button" class="menu_button btn-edit-label" data-filename="${escapeHtml(img.filename)}" title="Edit image label">
+                            🏷
+                        </button>
                         <button type="button" class="menu_button btn-delete" data-filename="${escapeHtml(img.filename)}" title="Delete this image">
                             🗑️
                         </button>
@@ -115,9 +119,8 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
         toggleLorebookImageMeta(worldName, entryUid, filename);
     });
 
-    // ── Inline label editing (double-click) ──
-    $grid.off('dblclick', '.pp-label-edit').on('dblclick', '.pp-label-edit', function () {
-        const $overlay = $(this);
+    // ── Inline label editing ──
+    function startLabelEdit($overlay) {
         if ($overlay.find('input').length) return; // already editing
         const currentText = $overlay.text();
         $overlay.data('pp-original-label', currentText);
@@ -125,6 +128,16 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
         $overlay.html(`<input type="text" class="pp-label-input" value="${escapeHtml(currentText)}">`);
         const $input = $overlay.find('input');
         $input.focus().select();
+    }
+
+    $grid.find('.btn-edit-label').off('click').on('click', function () {
+        const $card = $(this).closest('.picture-prompt-image-card');
+        const $overlay = $card.find('.pp-label-edit');
+        startLabelEdit($overlay);
+    });
+
+    $grid.off('dblclick', '.pp-label-edit').on('dblclick', '.pp-label-edit', function () {
+        startLabelEdit($(this));
     });
 
     // Blur / Enter to save
@@ -181,7 +194,7 @@ export function injectLorebookSection(outlet, worldName, entryUid) {
         <div class="pp-lorebook-images" data-entry-uid="${escapeHtml(String(entryUid))}" data-world-name="${escapeHtml(worldName)}">
             <div class="inline-drawer wide100p flexFlowColumn">
                 <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>📷 Lorebook Images (<span class="pp-li-count">0</span>)</b>
+                    <b>Lorebook Images (<span class="pp-li-count">0</span>)</b>
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
@@ -346,7 +359,16 @@ async function uploadLorebookImage(worldName, entryUid, file) {
         const filename = `${base}_${Date.now()}${ext}`;
 
         const blob = new Blob([await file.arrayBuffer()], { type: file.type });
-        const label = base.replace(/[_-]/g, ' ');
+
+        // Default label: use "Entry Title:" if set, otherwise cleaned filename
+        let label = '';
+        const $section = $(`.pp-lorebook-images[data-entry-uid="${escapeHtml(String(entryUid))}"]`);
+        if ($section.length) {
+            const comment = $section.closest('.world_entry').find('textarea[name="comment"]').val()?.trim();
+            label = comment ? comment + ':' : base.replace(/[_-]/g, ' ');
+        } else {
+            label = base.replace(/[_-]/g, ' ');
+        }
 
         await putLorebookImage(worldName, entryUid, filename, blob, label);
 

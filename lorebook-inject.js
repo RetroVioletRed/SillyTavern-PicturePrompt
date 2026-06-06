@@ -87,11 +87,10 @@ export async function injectLorebookImages(msg, quality) {
                     continue;
                 }
 
-                // If the image has a label, add a text block before the image
+                // Always insert a text block before the image — prevents
+                // consecutive image_url blocks which some APIs silently drop
                 const label = (img.label || '').trim();
-                if (label) {
-                    msg.content.push({ type: 'text', text: '\n[Label: ' + label + ']' });
-                }
+                msg.content.push({ type: 'text', text: label ? '\n' + label : '\n' });
 
                 msg.content.push({
                     type: 'image_url',
@@ -102,7 +101,7 @@ export async function injectLorebookImages(msg, quality) {
                 });
 
                 injectedCount++;
-                console.debug(`[PP-Lorebook] Injected image from entry ${key} (${injectedCount}/${maxTotal})`);
+                console.debug(`[PP-Lorebook] Injected image from entry ${key} (${injectedCount}/${maxTotal}), base64 len=${base64Data?.length || 0}`);
             } catch (err) {
                 console.debug(`[PP-Lorebook] Failed to inject image from entry ${key}:`, err);
             }
