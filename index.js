@@ -16,6 +16,9 @@ import {
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
+import { initLorebookInject, injectLorebookImages, getCachedActiveEntries } from './lorebook-inject.js';
+import { initLorebookUI } from './lorebook-ui.js';
+import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImage } from './lorebook-images.js';
 
 // ── User Feedback ─────────────────
 
@@ -59,20 +62,6 @@ function getPersonaAvatarUrl() {
 const DB_NAME = 'PicturePrompt';
 const DB_VERSION = 1;
 const STORE_NAME = 'extraImages';
-
-/** @returns {Promise<IDBDatabase>} */
-function openDB() {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains(STORE_NAME)) {
-                req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
 
 /**
  * @param {string} id - "avatarId::filename"
@@ -141,16 +130,6 @@ async function dbDeleteAllForPersona(avatarId) {
     }
 }
 
-/** @param {Blob} blob @returns {Promise<string>} data URL */
-function blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-}
-
 /**
  * Get a displayable URL for an image (prefers in-memory object URL cache).
  * Falls back to fetching the blob from IndexedDB and creating a blob: URL.
@@ -178,6 +157,8 @@ const defaultSettings = {
     maxExtraImages: 8,
     charExtraImagesEnabled: false,
     charExtraImagesMax: 8,
+    lorebookImagesEnabled: false,
+    lorebookImagesMax: 4,
 };
 
 function migrateOldSettings() {
@@ -217,6 +198,8 @@ function applySettingsToUI() {
     $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
     $('#picture_prompt_char_extra_enabled').prop('checked', s.charExtraImagesEnabled ?? false);
     $('#picture_prompt_char_extra_max').val(s.charExtraImagesMax ?? 8);
+    $('#picture_prompt_lorebook_enabled').prop('checked', s.lorebookImagesEnabled ?? false);
+    $('#picture_prompt_lorebook_max').val(s.lorebookImagesMax ?? 4);
     refreshTokenEstimate();
 }
 
@@ -251,6 +234,14 @@ function registerSettingsListeners() {
     });
     $('#picture_prompt_char_extra_max').on('input', function () {
         getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_lorebook_enabled').on('change', function () {
+        getSettings().lorebookImagesEnabled = !!$(this).prop('checked');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_lorebook_max').on('input', function () {
+        getSettings().lorebookImagesMax = parseInt($(this).val(), 10) || 4;
         getContext().saveSettingsDebounced();
     });
 }
@@ -503,10 +494,9 @@ function attachGalleryLabelButtons() {
         $btn.addClass('visible');
     }, true);
 
-    // Hide on mouseleave
+    // Hide on mouseleave — mouseleave fires on the gallery itself,
+    // so we check if any thumbnail is still hovered before hiding.
     gallery.addEventListener('mouseleave', function onLeave(e) {
-        const thumb = e.target.closest('.nGY2GThumbnail');
-        if (!thumb) return;
         setTimeout(() => {
             if (_editing) return;
             const hovered = gallery.querySelector('.nGY2GThumbnail:hover');
@@ -728,6 +718,23 @@ let _pp_panelRendered = false;
 function startPersonaPanelWatcher() {
     const $content = $('#PersonaManagement');
     if (!$content.length) {
+        // Retry up to ~30s for the persona panel to appear in DOM.
+        // The MutationObserver approach catches it immediately when it does,
+        // but we need a fallback in case it never fires.
+        let retries = 0;
+        const maxRetries = 15;
+        const check = () => {
+            if ($('#PersonaManagement').length) {
+                startPersonaPanelWatcher();
+                return;
+            }
+            if (++retries < maxRetries) {
+                setTimeout(check, 2000);
+            } else {
+                console.debug('[Picture Prompt] Persona panel never appeared — watcher not started');
+            }
+        };
+        // MutationObserver for early detection, retry timer as fallback
         const observer = new MutationObserver((_mutations, obs) => {
             if ($('#PersonaManagement').length) {
                 obs.disconnect();
@@ -735,7 +742,7 @@ function startPersonaPanelWatcher() {
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 2000);
+        setTimeout(check, 2000);
         return;
     }
 
@@ -882,6 +889,10 @@ function onPersonaChanged(avatarId) {
 /** Render images into a grid. @param images — array of {filename, label, objectUrl} */
 function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarId = null) {
     const $grid = $(gridSelector);
+    // Revoke old blob URLs before clearing the grid
+    $grid.find('img[src^="blob:"]').each(function () {
+        URL.revokeObjectURL(this.src);
+    });
     $grid.empty();
 
     if (!images || images.length === 0) {
@@ -1195,6 +1206,35 @@ async function getTotalImageTokenEstimate() {
         }
     }
 
+    // Lorebook images — iterate cached active entries
+    if (s.lorebookImagesEnabled) {
+        const lbSettings = getLorebookSettings();
+        const entries = getCachedActiveEntries();
+        let lbInjected = 0;
+        const lbMax = lbSettings.lorebookImagesMax || 4;
+        for (const [key, entry] of entries) {
+            if (lbInjected >= lbMax) break;
+            const images = getLorebookImages(entry.world || '', String(entry.uid));
+            const enabledImages = images.filter(img => img.enabled !== false);
+            for (const img of enabledImages) {
+                if (lbInjected >= lbMax) break;
+                try {
+                    const record = await getLorebookImage(entry.world || '', String(entry.uid), img.filename);
+                    if (record?.blob) {
+                        const b64 = await blobToDataURL(record.blob);
+                        if (b64) {
+                            totalLow += await estimateImageTokens(b64, 'low');
+                            totalHigh += await estimateImageTokens(b64, 'high');
+                            totalAuto += await estimateImageTokens(b64, 'auto');
+                            imageCount++;
+                            lbInjected++;
+                        }
+                    }
+                } catch { /* skip individual failures */ }
+            }
+        }
+    }
+
     return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
 }
 
@@ -1323,7 +1363,7 @@ async function urlToBase64(url) {
 function findMessageTarget(chat) {
     const system = chat.find(m => m.role === 'system');
     if (system) return system;
-    return chat.find(m => m.role === 'user') || chat[0];
+    return chat.find(m => m.role === 'user') || null;
 }
 
 function ensureContentBlocks(msg) {
@@ -1331,8 +1371,23 @@ function ensureContentBlocks(msg) {
         msg.content = [{ type: 'text', text: msg.content }];
         return true;
     }
-    if (Array.isArray(msg.content)) return true;
+    if (Array.isArray(msg.content)) {
+        // Guard against empty content array — inject a text block
+        if (msg.content.length === 0) {
+            msg.content.push({ type: 'text', text: '' });
+        }
+        return true;
+    }
     return false;
+}
+
+/** Find the first text block in msg.content, or push a new one. */
+function getFirstTextBlock(msg) {
+    const block = msg.content.find(b => b.type === 'text');
+    if (block) return block;
+    const newBlock = { type: 'text', text: '' };
+    msg.content.push(newBlock);
+    return newBlock;
 }
 
 async function onPromptReady(eventData) {
@@ -1344,6 +1399,7 @@ async function onPromptReady(eventData) {
     if (!chat?.length) return;
 
     const msg = findMessageTarget(chat);
+    if (!msg) return;
     if (!ensureContentBlocks(msg)) return;
 
     const quality = oai_settings?.inline_image_quality || 'auto';
@@ -1364,7 +1420,7 @@ async function onPromptReady(eventData) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                if (label) msg.content[0].text += '\n' + label;
+                if (label) msg.content.push({ type: 'text', text: '\n' + label });
                 msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
@@ -1379,6 +1435,11 @@ async function onPromptReady(eventData) {
         await injectCharGalleryImages(msg, quality);
     }
 
+    // Lorebook images — images from triggered world info entries
+    if (s.lorebookImagesEnabled) {
+        await injectLorebookImages(msg, quality);
+    }
+
     // Inject persona avatar
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
@@ -1386,7 +1447,7 @@ async function onPromptReady(eventData) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                if (label) msg.content[0].text += '\n' + label;
+                if (label) msg.content.push({ type: 'text', text: '\n' + label });
                 msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
@@ -1448,14 +1509,6 @@ async function injectCharGalleryImages(msg, quality) {
     }
 }
 
-// ── Helpers ───────────────────────
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
 // ── Init ──────────────────
 
 const extensionName = new URL(import.meta.url).pathname
@@ -1484,6 +1537,8 @@ export async function activate() {
     eventSource.on(event_types.SETTINGS_UPDATED, () => refreshTokenEstimate());
     startPersonaPanelWatcher();
     startGalleryWatcher();
+    initLorebookUI();
+    initLorebookInject();
 
     // ── Early-visible 'calculating...' hooks ─────────────────────
     // ST's event system fires late — these bridge the visual gap by
