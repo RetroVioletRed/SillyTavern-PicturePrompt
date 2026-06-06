@@ -11,6 +11,7 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 - **Gallery images injection** — inject gallery images to the prompt with per-character storage
 - **Per-image on/off toggle** — individually enable or disable which extra images get injected, without deleting them
 - **System prompt injection** — injects into the system message on every response
+- **Lorebook entry images** — attach images to world lorebook entries, injected when the entry is active
 - **Custom labels** — describe each image to your model however fits your scene
 - **Token estimation** — the extension estimates how many tokens will be used with your current settings automatically
 
@@ -45,6 +46,17 @@ Pinned images are stored per-character and can be labeled.
 
 As with Extra Images, extension settings let you enable/disable injection and set a max image count.
 
+## Lorebook Entry Images
+
+Open any world lorebook entry and you'll find a new **📷 Lorebook Images** section below the entry content. Upload images per-entry — they're stored locally in your browser and injected into prompts whenever that entry is active.
+
+Each image has:
+- **On/Off toggle** — quickly disable an image without deleting it
+- **🏷 Label** — click to edit the label (defaults to the entry title), helping your model understand what it's looking at
+- **Delete** — remove the image permanently
+
+Images are only injected when the lorebook entry triggers. The extension tracks active entries automatically, so you don't need to manage anything — just upload and play.
+
 ## How it works
 
 Every time you send a message, Picture Prompt injects your images into the system message as part of the model instruction.
@@ -64,3 +76,6 @@ It depends. The extension displays token count automatically in the settings. Th
 
 **"How do i add extra images to my persona?"**  
 You go to Persona Management → Your persona → Extra Images → Upload Image. Extra images are saved per persona and injecting to the system message at each reques.
+
+**"How to use Lorebook entry images?"**  
+Enable **Lorebook images** in Picture Prompt settings, then open any world lorebook entry — you'll see a 📷 section at the bottom. Upload an image, give it a label (or let it use the entry title), and you're set. When that entry triggers during chat, the image gets injected into the prompt automatically. You can disable individual images with the toggle — no need to delete them.
