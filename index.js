@@ -1435,9 +1435,9 @@ async function onPromptReady(eventData) {
         await injectCharGalleryImages(msg, quality);
     }
 
-    // Lorebook images — images from triggered world info entries
+    // Lorebook images — inject into system messages alongside world info text
     if (s.lorebookImagesEnabled) {
-        await injectLorebookImages(msg, quality);
+        await injectLorebookImages(chat, quality);
     }
 
     // Inject persona avatar
