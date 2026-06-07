@@ -1390,6 +1390,19 @@ function getFirstTextBlock(msg) {
     return newBlock;
 }
 
+/**
+ * Find a message in the chat array by its identifier, with content-block safety.
+ * @param {Array} chat - the full chat array
+ * @param {string} identifier - the message identifier to look for (e.g. 'charPersonality')
+ * @returns {object|null} the message with content blocks ensured, or null
+ */
+function findChatMessageById(chat, identifier) {
+    const msg = chat.find(m => m.identifier === identifier);
+    if (!msg) return null;
+    if (!ensureContentBlocks(msg)) return null;
+    return msg;
+}
+
 async function onPromptReady(eventData) {
     const s = getSettings();
     if (!s.enabled) return;
@@ -1398,6 +1411,7 @@ async function onPromptReady(eventData) {
     const { chat } = eventData;
     if (!chat?.length) return;
 
+    // Fallback target for gallery/extras and when specific messages are missing
     const msg = findMessageTarget(chat);
     if (!msg) return;
     if (!ensureContentBlocks(msg)) return;
@@ -1413,15 +1427,29 @@ async function onPromptReady(eventData) {
             .replace(/{{char}}/gi, charName);
     }
 
-    // Inject character avatar
+    /**
+     * Inject an image block into a message's content, right after the last text block
+     * (or at the end). Mimics avatar positioning: label then image_url.
+     */
+    function injectImageToMessage(targetMsg, base64Data, label, quality) {
+        if (label) targetMsg.content.push({ type: 'text', text: '\n' + label });
+        targetMsg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
+    }
+
+    // Inject character avatar — preferably into the charPersonality system message
     if (s.injectTarget === 'character' || s.injectTarget === 'both') {
         const url = getCharacterAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                if (label) msg.content.push({ type: 'text', text: '\n' + label });
-                msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
+                const charMsg = findChatMessageById(chat, 'charPersonality');
+                if (charMsg) {
+                    injectImageToMessage(charMsg, base64Data, label, quality);
+                } else {
+                    // Fallback: inject into the old message target
+                    injectImageToMessage(msg, base64Data, label, quality);
+                }
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
             }
@@ -1440,15 +1468,20 @@ async function onPromptReady(eventData) {
         await injectLorebookImages(chat, quality);
     }
 
-    // Inject persona avatar
+    // Inject persona avatar — preferably into the personaDescription system message
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                if (label) msg.content.push({ type: 'text', text: '\n' + label });
-                msg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
+                const personaMsg = findChatMessageById(chat, 'personaDescription');
+                if (personaMsg) {
+                    injectImageToMessage(personaMsg, base64Data, label, quality);
+                } else {
+                    // Fallback: inject into the old message target
+                    injectImageToMessage(msg, base64Data, label, quality);
+                }
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
             }
