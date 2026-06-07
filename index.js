@@ -1390,19 +1390,6 @@ function getFirstTextBlock(msg) {
     return newBlock;
 }
 
-/**
- * Find a message in the chat array by its identifier, with content-block safety.
- * @param {Array} chat - the full chat array
- * @param {string} identifier - the message identifier to look for (e.g. 'charPersonality')
- * @returns {object|null} the message with content blocks ensured, or null
- */
-function findChatMessageById(chat, identifier) {
-    const msg = chat.find(m => m.identifier === identifier);
-    if (!msg) return null;
-    if (!ensureContentBlocks(msg)) return null;
-    return msg;
-}
-
 async function onPromptReady(eventData) {
     const s = getSettings();
     if (!s.enabled) return;
@@ -1421,6 +1408,15 @@ async function onPromptReady(eventData) {
     const userName = context.name1 || 'User';
     const charName = context.name2 || 'Character';
 
+    // Read and resolve persona description for injection target matching
+    const chId = Number(this_chid);
+    let resolvedPersonaDesc = '';
+    try {
+        resolvedPersonaDesc = (power_user?.persona_description || '').trim()
+            .replace(/{{user}}/gi, userName)
+            .replace(/{{char}}/gi, charName);
+    } catch {}
+
     function resolveLabel(template) {
         return (template || '').trim()
             .replace(/{{user}}/gi, userName)
@@ -1428,26 +1424,47 @@ async function onPromptReady(eventData) {
     }
 
     /**
-     * Inject an image block into a message's content, right after the last text block
-     * (or at the end). Mimics avatar positioning: label then image_url.
+     * Get all text content from a message as a single string.
+     */
+    function getMessageText(m) {
+        return Array.isArray(m.content)
+            ? m.content.filter(b => b.type === 'text').map(b => b.text).join('')
+            : String(m.content);
+    }
+
+    /**
+     * Inject an image block into a message's content, right after the last text block.
      */
     function injectImageToMessage(targetMsg, base64Data, label, quality) {
         if (label) targetMsg.content.push({ type: 'text', text: '\n' + label });
         targetMsg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
     }
 
-    // Inject character avatar — preferably into the charPersonality system message
+    // Inject character avatar — into the system message containing the raw personality text
     if (s.injectTarget === 'character' || s.injectTarget === 'both') {
         const url = getCharacterAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                const charMsg = findChatMessageById(chat, 'charPersonality');
-                if (charMsg) {
+                // Read raw character personality from character data, then find the system
+                // message that contains it (works regardless of prompt format/preset).
+                // Falls back to character description if personality is empty.
+                let charSearchText = '';
+                try {
+                    charSearchText = (characters?.[chId]?.data?.personality || '').trim();
+                    if (!charSearchText) {
+                        charSearchText = (characters?.[chId]?.data?.description || '').trim();
+                    }
+                } catch {}
+                // Resolve template variables
+                charSearchText = charSearchText.replace(/{{user}}/gi, userName).replace(/{{char}}/gi, charName);
+                const charMsg = charSearchText
+                    ? chat.find(m => m.role === 'system' && getMessageText(m).includes(charSearchText))
+                    : null;
+                if (charMsg && ensureContentBlocks(charMsg)) {
                     injectImageToMessage(charMsg, base64Data, label, quality);
                 } else {
-                    // Fallback: inject into the old message target
                     injectImageToMessage(msg, base64Data, label, quality);
                 }
             } else {
@@ -1468,18 +1485,20 @@ async function onPromptReady(eventData) {
         await injectLorebookImages(chat, quality);
     }
 
-    // Inject persona avatar — preferably into the personaDescription system message
+    // Inject persona avatar — into the system message containing the persona description text
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
         const url = getPersonaAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                const personaMsg = findChatMessageById(chat, 'personaDescription');
-                if (personaMsg) {
+                // resolvedPersonaDesc is already resolved above
+                const personaMsg = resolvedPersonaDesc
+                    ? chat.find(m => m.role === 'system' && getMessageText(m).includes(resolvedPersonaDesc))
+                    : null;
+                if (personaMsg && ensureContentBlocks(personaMsg)) {
                     injectImageToMessage(personaMsg, base64Data, label, quality);
                 } else {
-                    // Fallback: inject into the old message target
                     injectImageToMessage(msg, base64Data, label, quality);
                 }
             } else {
