@@ -272,3 +272,19 @@
     box-sizing: border-box;
     font-family: inherit;
 }
+
+/* ── Lorebook image section ── */
+
+.pp-lorebook-images {
+    margin-top: 0.5rem;
+    width: 100%;
+}
+
+.pp-lorebook-images .inline-drawer-content {
+    padding-top: 0.5rem;
+}
+
+.pp-lorebook-images .card-actions .btn-delete {
+    color: #e55;
+    border-color: #e55;
+}

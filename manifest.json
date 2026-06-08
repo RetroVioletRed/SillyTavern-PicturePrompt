@@ -8,6 +8,7 @@
     "loading_order": 50,
     "minimum_client_version": "1.14.0",
     "hooks": {
-        "activate": "activate"
+        "activate": "activate",
+        "deactivate": "deactivate"
     }
 }

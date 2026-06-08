@@ -16,9 +16,9 @@ import {
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
-import { initLorebookInject, injectLorebookImages, getCachedActiveEntries } from './lorebook-inject.js';
-import { initLorebookUI } from './lorebook-ui.js';
-import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImage } from './lorebook-images.js';
+import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, deactivateLorebookInject } from './lorebook-inject.js';
+import { initLorebookUI, deactivateLorebookUI } from './lorebook-ui.js';
+import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached, clearFetchCache, STORE_NAME } from './lorebook-images.js';
 
 // ── User Feedback ─────────────────
 
@@ -59,10 +59,6 @@ function getPersonaAvatarUrl() {
 
 // ── IndexedDB Blob Storage ────────────────────────
 
-const DB_NAME = 'PicturePrompt';
-const DB_VERSION = 1;
-const STORE_NAME = 'extraImages';
-
 /**
  * @param {string} id - "avatarId::filename"
  * @param {Blob} blob
@@ -86,6 +82,32 @@ async function dbGet(id) {
         const req = tx.objectStore(STORE_NAME).get(id);
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Batch-read multiple records from IndexedDB in a single transaction.
+ * Used by persona extras and lorebook injection to replace N sequential
+ * dbGet() calls with one batched read.
+ * @param {string[]} keys
+ * @returns {Promise<(object|null)[]>} Results in same order as keys (null if not found).
+ */
+async function dbGetAll(keys) {
+    if (!keys.length) return [];
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const results = new Array(keys.length);
+        let remaining = keys.length;
+        keys.forEach((key, i) => {
+            const req = store.get(key);
+            req.onsuccess = () => {
+                results[i] = req.result || null;
+                if (--remaining === 0) resolve(results);
+            };
+            req.onerror = () => reject(req.error);
+        });
     });
 }
 
@@ -276,6 +298,7 @@ function setMetaForPersona(avatarId, list) {
 
 let _pp_injectModeActive = false;
 let _pp_galleryObserver = null;
+let _pp_personaDropdownObserver = null;
 
 /**
  * Get gallery image selections for a character from settings.
@@ -511,19 +534,53 @@ function attachGalleryLabelButtons() {
     gallery._pp_labelHandlerAttached = true;
 }
 
-// ── Gallery Watcher ─────────────────
+// ── Panel Watchers (Gallery + Persona) ─────────
 
-function startGalleryWatcher() {
-    const $moving = document.getElementById('movingDivs');
-    if (!$moving) {
-        // Retry once after a short delay
-        setTimeout(() => {
-            const el = document.getElementById('movingDivs');
-            if (el) observeGallery(el);
-        }, 2000);
-        return;
+/**
+ * Consolidated DOM watcher — finds #movingDivs (gallery) and
+ * #PersonaManagement (persona panel) using a single body observer.
+ * Replaces the previous dual-setTimeout + dual-observer approach.
+ */
+function startPanelWatchers() {
+    let galleryDone = false;
+    let personaDone = false;
+
+    function tryInitGallery() {
+        if (galleryDone) return;
+        const el = document.getElementById('movingDivs');
+        if (el) { galleryDone = true; observeGallery(el); }
     }
-    observeGallery($moving);
+
+    function tryInitPersona() {
+        if (personaDone) return;
+        const el = document.getElementById('PersonaManagement');
+        if (el) { personaDone = true; observePersonaPanel(el); }
+    }
+
+    // Try immediately — both elements may already be in DOM at activate time
+    tryInitGallery();
+    tryInitPersona();
+
+    // MutationObserver catches late arrivals (e.g. drawer opens)
+    if (typeof MutationObserver !== 'undefined') {
+        const obs = new MutationObserver(() => {
+            tryInitGallery();
+            tryInitPersona();
+            if (galleryDone && personaDone) obs.disconnect();
+        });
+        obs.observe(document.body, { childList: true, subtree: true });
+
+        // Retry fallback for guaranteed convergence
+        let retries = 0;
+        const retry = () => {
+            tryInitGallery();
+            tryInitPersona();
+            if (galleryDone && personaDone) { obs.disconnect(); return; }
+            if (++retries < 15) setTimeout(retry, 2000);
+            else { obs.disconnect(); console.debug('[Picture Prompt] Watchers timed out'); }
+        };
+        setTimeout(retry, 2000);
+    }
 }
 
 function observeGallery($moving) {
@@ -715,37 +772,11 @@ function watchGalleryContent() {
 let _pp_personaPanelObserver = null;
 let _pp_panelRendered = false;
 
-function startPersonaPanelWatcher() {
-    const $content = $('#PersonaManagement');
-    if (!$content.length) {
-        // Retry up to ~30s for the persona panel to appear in DOM.
-        // The MutationObserver approach catches it immediately when it does,
-        // but we need a fallback in case it never fires.
-        let retries = 0;
-        const maxRetries = 15;
-        const check = () => {
-            if ($('#PersonaManagement').length) {
-                startPersonaPanelWatcher();
-                return;
-            }
-            if (++retries < maxRetries) {
-                setTimeout(check, 2000);
-            } else {
-                console.debug('[Picture Prompt] Persona panel never appeared — watcher not started');
-            }
-        };
-        // MutationObserver for early detection, retry timer as fallback
-        const observer = new MutationObserver((_mutations, obs) => {
-            if ($('#PersonaManagement').length) {
-                obs.disconnect();
-                startPersonaPanelWatcher();
-            }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-        setTimeout(check, 2000);
-        return;
-    }
-
+/**
+ * Attach attributes observer to the persona panel element.
+ * Called by startPanelWatchers once #PersonaManagement is found.
+ */
+function observePersonaPanel($content) {
     checkAndRender();
 
     _pp_personaPanelObserver = new MutationObserver(function (mutations) {
@@ -756,7 +787,7 @@ function startPersonaPanelWatcher() {
             }
         }
     });
-    _pp_personaPanelObserver.observe($content[0], { attributes: true });
+    _pp_personaPanelObserver.observe($content, { attributes: true });
 }
 
 function checkAndRender() {
@@ -880,6 +911,7 @@ function updatePersonaLabel(avatarId) {
 }
 
 function onPersonaChanged(avatarId) {
+    clearFetchCache();
     const $panel = $('.persona_management_current_persona');
     if (!$panel.length) return;
     renderIfPanelOpen();
@@ -1216,21 +1248,50 @@ async function getTotalImageTokenEstimate() {
             if (lbInjected >= lbMax) break;
             const images = getLorebookImages(entry.world || '', String(entry.uid));
             const enabledImages = images.filter(img => img.enabled !== false);
-            for (const img of enabledImages) {
-                if (lbInjected >= lbMax) break;
+            const wName = entry.world || '';
+            const uid = String(entry.uid);
+
+            // Gather images to inject for this entry, honouring the global limit
+            const toInject = enabledImages.slice(0, lbMax - lbInjected);
+            if (!toInject.length) break;
+
+            // Separate cached vs. uncached
+            const dataUrlByFilename = new Map();
+            const uncachedFilenames = [];
+            for (const img of toInject) {
+                const key = 'lb::' + wName + '::' + uid + '::' + img.filename;
+                const hit = getCached(key);
+                if (hit !== undefined) {
+                    dataUrlByFilename.set(img.filename, hit);
+                } else {
+                    uncachedFilenames.push(img.filename);
+                }
+            }
+
+            // Batch-read uncached images in one transaction + parallel conversion
+            if (uncachedFilenames.length > 0) {
                 try {
-                    const record = await getLorebookImage(entry.world || '', String(entry.uid), img.filename);
-                    if (record?.blob) {
-                        const b64 = await blobToDataURL(record.blob);
-                        if (b64) {
-                            totalLow += await estimateImageTokens(b64, 'low');
-                            totalHigh += await estimateImageTokens(b64, 'high');
-                            totalAuto += await estimateImageTokens(b64, 'auto');
-                            imageCount++;
-                            lbInjected++;
-                        }
+                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
+                    for (const [filename, dataUrl] of fresh) {
+                        const key = 'lb::' + wName + '::' + uid + '::' + filename;
+                        setCached(key, dataUrl);
+                        dataUrlByFilename.set(filename, dataUrl);
                     }
-                } catch { /* skip individual failures */ }
+                } catch { /* skip batch failures */ }
+            }
+
+            // Process images in original order
+            for (const img of toInject) {
+                if (lbInjected >= lbMax) break;
+                const b64 = dataUrlByFilename.get(img.filename);
+                if (!b64) continue;
+                try {
+                    totalLow += await estimateImageTokens(b64, 'low');
+                    totalHigh += await estimateImageTokens(b64, 'high');
+                    totalAuto += await estimateImageTokens(b64, 'auto');
+                    imageCount++;
+                    lbInjected++;
+                } catch { /* skip individual token estimate failures */ }
             }
         }
     }
@@ -1329,31 +1390,54 @@ async function refreshTokenEstimate() {
 /**
  * Get extra images for a persona: reads metadata from settings,
  * fetches blobs from IndexedDB, converts to base64 data URLs.
+ * Result is cached so token estimation and injection share one fetch.
  * @param {string} avatarId
  * @returns {Promise<{filename: string, dataUrl: string, label: string}[]>}
  */
 async function getExtraImagesForInjection(avatarId) {
+    const cacheKey = 'extra::' + avatarId;
+    const cached = getCached(cacheKey);
+    if (cached !== undefined) return cached;
+
     const metaList = getMetaForPersona(avatarId);
     const enabledMeta = metaList.filter(m => m.enabled !== false);
+    if (!enabledMeta.length) return [];
+
+    // Batch-read all blobs in a single IndexedDB transaction
+    const keys = enabledMeta.map(m => `${avatarId}::${m.filename}`);
+    const records = await dbGetAll(keys);
+
+    // Convert blobs to data URLs in parallel
+    const dataUrls = await Promise.all(
+        records.map(r => r?.blob ? blobToDataURL(r.blob) : Promise.resolve(null))
+    );
+
     const results = [];
-    for (const meta of enabledMeta) {
-        const entry = await dbGet(`${avatarId}::${meta.filename}`);
-        if (entry?.blob) {
-            const dataUrl = await blobToDataURL(entry.blob);
-            if (dataUrl) {
-                results.push({ filename: meta.filename, dataUrl, label: meta.label || '' });
-            }
+    for (let i = 0; i < enabledMeta.length; i++) {
+        if (dataUrls[i]) {
+            results.push({
+                filename: enabledMeta[i].filename,
+                dataUrl: dataUrls[i],
+                label: enabledMeta[i].label || '',
+            });
         }
     }
+    setCached(cacheKey, results);
     return results;
 }
 
-/** Fetch an image URL (for avatars) and convert to base64. */
+/** Fetch an image URL (for avatars/gallery) and convert to base64. Cached. */
 async function urlToBase64(url) {
+    const cacheKey = 'url::' + url;
+    const cached = getCached(cacheKey);
+    if (cached !== undefined) return cached;
+
     try {
         const response = await fetch(url, { cache: 'force-cache' });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await blobToDataURL(await response.blob());
+        const dataUrl = await blobToDataURL(await response.blob());
+        if (dataUrl) setCached(cacheKey, dataUrl);
+        return dataUrl;
     } catch (err) {
         console.warn('[Picture Prompt] Failed to fetch image:', url, err);
         return null;
@@ -1397,6 +1481,9 @@ async function onPromptReady(eventData) {
 
     const { chat } = eventData;
     if (!chat?.length) return;
+
+    // Read lorebook settings once — thread to sub-functions
+    const lbSettings = getLorebookSettings();
 
     // Fallback target for gallery/extras and when specific messages are missing
     const msg = findMessageTarget(chat);
@@ -1442,6 +1529,7 @@ async function onPromptReady(eventData) {
 
     // Inject character avatar — into the system message containing the raw personality text
     if (s.injectTarget === 'character' || s.injectTarget === 'both') {
+        let charTarget = msg;
         const url = getCharacterAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
@@ -1464,6 +1552,7 @@ async function onPromptReady(eventData) {
                     : null;
                 if (charMsg && ensureContentBlocks(charMsg)) {
                     injectImageToMessage(charMsg, base64Data, label, quality);
+                    charTarget = charMsg;
                 } else {
                     injectImageToMessage(msg, base64Data, label, quality);
                 }
@@ -1473,20 +1562,21 @@ async function onPromptReady(eventData) {
         } else {
             warnOnce('char-missing', 'No character avatar set. Set one in the character panel.');
         }
-    }
 
-    // Character gallery extras — controlled by its own setting, independent of avatar injection
-    if (s.charExtraImagesEnabled) {
-        await injectCharGalleryImages(msg, quality);
+        // Character gallery extras — land right after character avatar in the same message
+        if (s.charExtraImagesEnabled) {
+            await injectCharGalleryImages(charTarget, quality, s.charExtraImagesMax);
+        }
     }
 
     // Lorebook images — inject into system messages alongside world info text
     if (s.lorebookImagesEnabled) {
-        await injectLorebookImages(chat, quality);
+        await injectLorebookImages(chat, quality, lbSettings);
     }
 
     // Inject persona avatar — into the system message containing the persona description text
     if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
+        let personaTarget = msg;
         const url = getPersonaAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
@@ -1498,6 +1588,7 @@ async function onPromptReady(eventData) {
                     : null;
                 if (personaMsg && ensureContentBlocks(personaMsg)) {
                     injectImageToMessage(personaMsg, base64Data, label, quality);
+                    personaTarget = personaMsg;
                 } else {
                     injectImageToMessage(msg, base64Data, label, quality);
                 }
@@ -1507,17 +1598,17 @@ async function onPromptReady(eventData) {
         } else {
             warnOnce('persona-missing', 'No persona avatar set. Set one in the persona panel.');
         }
-    }
 
-    // Persona extra images — controlled by its own setting, independent of avatar injection
-    if (s.extraImagesEnabled && user_avatar) {
-        const extras = await getExtraImagesForInjection(user_avatar);
-        for (const img of extras) {
-            const perImageLabel = (img.label || '').trim();
-            if (perImageLabel) {
-                msg.content.push({ type: 'text', text: '\n' + perImageLabel });
+        // Persona extra images — land right after persona avatar in the same message
+        if (s.extraImagesEnabled && user_avatar) {
+            const extras = await getExtraImagesForInjection(user_avatar);
+            for (const img of extras) {
+                const perImageLabel = (img.label || '').trim();
+                if (perImageLabel) {
+                    personaTarget.content.push({ type: 'text', text: '\n' + perImageLabel });
+                }
+                personaTarget.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
             }
-            msg.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
         }
     }
 }
@@ -1526,8 +1617,9 @@ async function onPromptReady(eventData) {
  * Fetch enabled character gallery images and inject them into the prompt.
  * @param {object} msg - the target message with content array
  * @param {string} quality - image detail level
+ * @param {number} maxCount - pre-read from settings (charExtraImagesMax)
  */
-async function injectCharGalleryImages(msg, quality) {
+async function injectCharGalleryImages(msg, quality, maxCount) {
     const chId = Number(this_chid);
     if (chId < 0 || !characters?.[chId]?.avatar) return;
 
@@ -1542,8 +1634,8 @@ async function injectCharGalleryImages(msg, quality) {
     const folder = getCharGalleryFolder();
     if (!folder) return;
 
-    const maxCount = getSettings().charExtraImagesMax || 8;
-    const toInject = enabledFilenames.slice(0, maxCount);
+    const effectiveMax = maxCount || 8;
+    const toInject = enabledFilenames.slice(0, effectiveMax);
 
     for (const filename of toInject) {
         // Build gallery image URL — same pattern as gallery: user/images/{folder}/{filename}
@@ -1580,15 +1672,30 @@ async function addSettingsUI() {
     }
 }
 
+// ── Named event handlers (for deactivate cleanup) ────
+
+function _onChatChanged() {
+    clearFetchCache();
+    refreshTokenEstimate();
+}
+
+function _onSettingsUpdated() {
+    refreshTokenEstimate();
+}
+
+function _onChatBlockClick(e) {
+    if ($(e.target).closest('.PastChat_cross, .exportRawChatButton, .exportChatButton, .renameChatButton').length) return;
+    showCalculating();
+}
+
 export async function activate() {
     getSettings();
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
-    eventSource.on(event_types.CHAT_CHANGED, () => refreshTokenEstimate());
-    eventSource.on(event_types.SETTINGS_UPDATED, () => refreshTokenEstimate());
-    startPersonaPanelWatcher();
-    startGalleryWatcher();
+    eventSource.on(event_types.CHAT_CHANGED, _onChatChanged);
+    eventSource.on(event_types.SETTINGS_UPDATED, _onSettingsUpdated);
+    startPanelWatchers();
     initLorebookUI();
     initLorebookInject();
 
@@ -1597,19 +1704,16 @@ export async function activate() {
     // showing 'calculating...' before the real estimate runs.
 
     // Chat block clicks (chat switcher)
-    $(document).on('click', '.select_chat_block', (e) => {
-        if ($(e.target).closest('.PastChat_cross, .exportRawChatButton, .exportChatButton, .renameChatButton').length) return;
-        showCalculating();
-    });
+    $(document).on('click', '.select_chat_block', _onChatBlockClick);
 
     // Persona dropdown changes — fires before PERSONA_CHANGED event
     if (typeof MutationObserver !== 'undefined') {
-        const personaObs = new MutationObserver(() => showCalculating());
+        _pp_personaDropdownObserver = new MutationObserver(() => showCalculating());
         // Observe after a short delay — the dropdown may not be in DOM yet
         const tryObservePersona = () => {
             const $dd = $('#persona-management-dropdown');
             if ($dd.length) {
-                personaObs.observe($dd[0], { subtree: true, childList: true, characterData: true });
+                _pp_personaDropdownObserver.observe($dd[0], { subtree: true, childList: true, characterData: true });
             } else {
                 setTimeout(tryObservePersona, 200);
             }
@@ -1619,4 +1723,36 @@ export async function activate() {
 
     console.debug('[Picture Prompt] Activated');
     refreshTokenEstimate();
+}
+
+export async function deactivate() {
+    // ── MutationObservers ──
+    _pp_galleryObserver?.disconnect();
+    _pp_galleryObserver = null;
+    _pp_personaPanelObserver?.disconnect();
+    _pp_personaPanelObserver = null;
+    _pp_personaDropdownObserver?.disconnect();
+    _pp_personaDropdownObserver = null;
+
+    // Gallery content observer (attached to DOM element, not module-level)
+    const dragGallery = document.getElementById('dragGallery');
+    if (dragGallery?._pp_contentObserver) {
+        dragGallery._pp_contentObserver.disconnect();
+        delete dragGallery._pp_contentObserver;
+    }
+
+    // ── jQuery global delegate ──
+    $(document).off('click', '.select_chat_block', _onChatBlockClick);
+
+    // ── EventSource listeners ──
+    eventSource.removeListener(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
+    eventSource.removeListener(event_types.PERSONA_CHANGED, onPersonaChanged);
+    eventSource.removeListener(event_types.CHAT_CHANGED, _onChatChanged);
+    eventSource.removeListener(event_types.SETTINGS_UPDATED, _onSettingsUpdated);
+
+    // ── Sub-modules ──
+    deactivateLorebookUI();
+    deactivateLorebookInject();
+
+    console.debug('[Picture Prompt] Deactivated');
 }

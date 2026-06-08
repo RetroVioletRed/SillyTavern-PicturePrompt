@@ -19,7 +19,7 @@ const DB_VERSION = 1;
  * Object store name — shared with the main PicturePrompt extension.
  * @type {string}
  */
-const STORE_NAME = 'extraImages';
+export const STORE_NAME = 'extraImages';
 
 /**
  * Settings namespace within extension_settings.
@@ -39,20 +39,36 @@ const DEFAULT_LOREBOOK_SETTINGS = {
 // ── IndexedDB Helpers ────────────────────
 
 /**
+ * Cached connection promise — reused across all DB operations.
+ * Reset on error so the next attempt opens a fresh connection.
+ * @type {Promise<IDBDatabase>|null}
+ */
+let _dbPromise = null;
+
+/**
  * Open (or create) the IndexedDB database.
+ * The connection is cached so multiple calls within a single prompt
+ * cycle (e.g. putLorebookImage → listLorebookImages → getLorebookImage)
+ * reuse the same handle instead of opening 10–20 separate connections.
  * @returns {Promise<IDBDatabase>}
  */
 function openDB() {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains(STORE_NAME)) {
-                req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
+    if (!_dbPromise) {
+        _dbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = () => {
+                if (!req.result.objectStoreNames.contains(STORE_NAME)) {
+                    req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => {
+                _dbPromise = null; // clear cache so next attempt retries
+                reject(req.error);
+            };
+        });
+    }
+    return _dbPromise;
 }
 
 export { openDB };
@@ -137,6 +153,53 @@ export async function getLorebookImage(worldName, entryUid, filename) {
  * @param {string} filename
  * @returns {Promise<void>}
  */
+/**
+ * Batch-read multiple lorebook images and convert to data URLs.
+ * Fetches all records in a single IndexedDB transaction, then converts
+ * blobs to data URLs in parallel — replaces N sequential getLorebookImage
+ * + blobToDataURL calls with 1 transaction + parallel FileReader.
+ *
+ * Used by the lorebook estimate/inject loops when cache is cold.
+ *
+ * @param {string} worldName
+ * @param {string|number} entryUid
+ * @param {string[]} filenames
+ * @returns {Promise<Map<string, string>>} Map of filename → dataUrl (only successful entries)
+ */
+export async function getLorebookImagesDataUrls(worldName, entryUid, filenames) {
+    if (!filenames.length) return new Map();
+    const db = await openDB();
+
+    // Step 1 — batch-read all records in a single IndexedDB transaction
+    const records = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const results = new Array(filenames.length);
+        let remaining = filenames.length;
+        filenames.forEach((filename, i) => {
+            const id = lorebookKey(worldName, String(entryUid), filename);
+            const req = store.get(id);
+            req.onsuccess = () => {
+                results[i] = { filename, blob: req.result?.blob || null };
+                if (--remaining === 0) resolve(results);
+            };
+            req.onerror = () => reject(req.error);
+        });
+    });
+
+    // Step 2 — convert blobs to data URLs in parallel
+    const dataUrls = await Promise.all(
+        records.map(r => r.blob ? blobToDataURL(r.blob) : Promise.resolve(null))
+    );
+
+    // Step 3 — build result map
+    const map = new Map();
+    for (let i = 0; i < records.length; i++) {
+        if (dataUrls[i]) map.set(records[i].filename, dataUrls[i]);
+    }
+    return map;
+}
+
 export async function deleteLorebookImage(worldName, entryUid, filename) {
     const id = lorebookKey(worldName, entryUid, filename);
     const db = await openDB();
@@ -378,12 +441,48 @@ export function blobToDataURL(blob) {
 
 /**
  * HTML-escape a string for safe DOM insertion.
+ * Reuses a single cached element instead of allocating per call.
  * @param {string} str
  * @returns {string}
  */
+const _escapeDiv = document.createElement('div');
 export function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = String(str);
-    return div.innerHTML;
+    _escapeDiv.textContent = str ?? '';
+    return _escapeDiv.innerHTML;
+}
+
+// ── Image Data URL Cache ──────────────────
+// Prevents double-fetching images during the token-estimate → prompt-inject
+// cycle. Invalidated on CHAT_CHANGED, PERSONA_CHANGED, WORLD_INFO_ACTIVATED.
+// No TTL — cache lives until the data source actually changes.
+
+/** @type {Map<string, {value: any, timestamp: number}>} */
+const _fetchCache = new Map();
+
+/**
+ * Retrieve a cached value by key.
+ * @param {string} key
+ * @returns {any|undefined} The cached value, or undefined on cache miss.
+ */
+export function getCached(key) {
+    const entry = _fetchCache.get(key);
+    if (entry) return entry.value;
+    return undefined;
+}
+
+/**
+ * Store a value in the cache.
+ * @param {string} key
+ * @param {any} value
+ */
+export function setCached(key, value) {
+    _fetchCache.set(key, { value, timestamp: Date.now() });
+}
+
+/**
+ * Clear the entire image data URL cache.
+ * Called on chat change, persona change, and world info activation.
+ */
+export function clearFetchCache() {
+    _fetchCache.clear();
 }

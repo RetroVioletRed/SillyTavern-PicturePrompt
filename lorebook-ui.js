@@ -432,6 +432,29 @@ let _lorebookObserver = null;
 let _lorebookScanInterval = null;
 
 /**
+ * Resolve a numeric UID from a .world_entry element.
+ * Tries data-uid first, then falls back to regex-parsing the form value.
+ * Logs a warning when the fallback is used so DOM breakage is detectable.
+ * @param {JQuery} $worldEntry - jQuery element for .world_entry
+ * @returns {string|null}
+ */
+function resolveEntryUid($worldEntry) {
+    const entryUid = $worldEntry.data('uid');
+    if (entryUid !== undefined && entryUid !== null && entryUid !== '') {
+        return String(entryUid);
+    }
+    // Fallback: parse from form value text
+    const uidText = $worldEntry.find('.world_entry_form_uid_value').text().trim();
+    const uidMatch = uidText.match(/UID:\s*(\d+)/i);
+    if (uidMatch) {
+        console.warn('[PP-Lorebook] UID extracted via regex fallback — ST DOM may have changed', uidMatch[1]);
+        return uidMatch[1];
+    }
+    console.debug('[PP-Lorebook] Could not extract UID from world entry');
+    return null;
+}
+
+/**
  * Start watching for world info entry editors being opened.
  * Injects the lorebook image section when a drawer opens.
  */
@@ -480,21 +503,9 @@ export function initLorebookUI() {
                         return;
                     }
 
-                    const entryUid = $worldEntry.data('uid');
-                    if (entryUid === undefined || entryUid === null || entryUid === '') {
-                        console.debug('[PP-Lorebook] No UID on .world_entry, trying .world_entry_form_uid_value');
-                        const uidText = $worldEntry.find('.world_entry_form_uid_value').text().trim();
-                        const uidMatch = uidText.match(/UID:\s*(\d+)/i);
-                        if (!uidMatch) {
-                            console.debug('[PP-Lorebook] Could not extract UID');
-                            return;
-                        }
-                        // We need a numeric UID — use the matched number
-                        const uid = uidMatch[1];
-                        injectIfReady($outlet, uid);
-                    } else {
-                        injectIfReady($outlet, entryUid);
-                    }
+                    const uid = resolveEntryUid($worldEntry);
+                    if (!uid) return;
+                    injectIfReady($outlet, uid);
                 });
             }
         }
@@ -522,15 +533,9 @@ function scanExistingEditors() {
         const $worldEntry = $outlet.closest('.world_entry');
         if (!$worldEntry.length) return;
 
-        const entryUid = $worldEntry.data('uid');
-        if (entryUid === undefined || entryUid === null || entryUid === '') {
-            const uidText = $worldEntry.find('.world_entry_form_uid_value').text().trim();
-            const uidMatch = uidText.match(/UID:\s*(\d+)/i);
-            if (!uidMatch) return;
-            injectIfReady($outlet, uidMatch[1]);
-        } else {
-            injectIfReady($outlet, entryUid);
-        }
+        const uid = resolveEntryUid($worldEntry);
+        if (!uid) return;
+        injectIfReady($outlet, uid);
     });
 }
 
@@ -550,31 +555,9 @@ function injectIfReady($outlet, entryUid) {
     }, 100);
 }
 
-// ── Styles ─────────────────────────────────────
-
-/**
- * Inject required styles for the lorebook section into the page.
- */
-function injectStyles() {
-    if (document.getElementById('pp-lorebook-styles')) return;
-
-    const style = document.createElement('style');
-    style.id = 'pp-lorebook-styles';
-    style.textContent = `
-        .pp-lorebook-images {
-            margin-top: 0.5rem;
-            width: 100%;
-        }
-        .pp-lorebook-images .inline-drawer-content {
-            padding-top: 0.5rem;
-        }
-        .pp-lorebook-images .card-actions .btn-delete {
-            color: #e55;
-            border-color: #e55;
-        }
-    `;
-    document.head.appendChild(style);
+export function deactivateLorebookUI() {
+    _lorebookObserver?.disconnect();
+    _lorebookObserver = null;
+    clearInterval(_lorebookScanInterval);
+    _lorebookScanInterval = null;
 }
-
-// Inject styles on module load
-injectStyles();
