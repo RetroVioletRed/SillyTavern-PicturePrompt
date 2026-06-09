@@ -19,6 +19,9 @@ import { getImageSizeFromDataURL } from '../../../utils.js';
 import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, deactivateLorebookInject } from './lorebook-inject.js';
 import { initLorebookUI, deactivateLorebookUI } from './lorebook-ui.js';
 import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached, clearFetchCache, STORE_NAME } from './lorebook-images.js';
+import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
+import { Popup } from '../../../popup.js';
 
 // ── User Feedback ─────────────────
 
@@ -1698,6 +1701,155 @@ function _onChatBlockClick(e) {
     showCalculating();
 }
 
+// ── Slash Commands ─────────────────
+
+async function ppStatusCallback() {
+    const s = getSettings();
+    const lbSettings = getLorebookSettings();
+    const lines = ['<h3>Picture Prompt Status</h3>', '<table style="width:100%;border-collapse:collapse;">'];
+
+    const row = (k, v) => `<tr><td style="padding:4px 12px 4px 0;white-space:nowrap;color:var(--text-color-dim);">${k}</td><td style="padding:4px 0;">${v}</td></tr>`;
+
+    lines.push(row('Enabled', s.enabled ? '✓ <span style="color:var(--success-color);">yes</span>' : '✗ <span style="color:var(--error-color);">no</span>'));
+    lines.push(row('Inject target', s.injectTarget === 'none' ? 'none' : s.injectTarget));
+
+    // Persona extras
+    if (user_avatar) {
+        const meta = getMetaForPersona(user_avatar);
+        const enabled = meta.filter(m => m.enabled !== false).length;
+        lines.push(row('Persona extras', `${meta.length} images (${enabled} enabled, max ${s.maxExtraImages})`));
+    } else {
+        lines.push(row('Persona extras', 'no persona selected'));
+    }
+
+    // Gallery pins
+    const chId = Number(this_chid);
+    if (!isGroupChat() && chId >= 0 && characters?.[chId]?.avatar) {
+        const avatarId = characters[chId].avatar;
+        const meta = getCharGalleryMeta(avatarId);
+        const selected = Object.values(meta).filter(v => v.enabled).length;
+        lines.push(row('Gallery pins', `${selected} selected (max ${s.charExtraImagesMax})`));
+    } else if (isGroupChat()) {
+        lines.push(row('Gallery pins', '<span style="color:var(--text-color-dim);">skipped — group chat</span>'));
+    } else {
+        lines.push(row('Gallery pins', 'no character'));
+    }
+
+    // Lorebook
+    const lbEntries = getCachedActiveEntries();
+    let lbImageCount = 0;
+    for (const [, entry] of lbEntries) {
+        const imgs = getLorebookImages(entry.world || '', String(entry.uid));
+        lbImageCount += imgs.filter(img => img.enabled !== false).length;
+    }
+    lines.push(row('Lorebook', lbSettings.lorebookImagesEnabled
+        ? `✓ <span style="color:var(--success-color);">enabled</span>, ${lbEntries.size} active entries (${lbImageCount} images, max ${lbSettings.lorebookImagesMax})`
+        : '✗ disabled'));
+
+    // Group chat warning
+    if (isGroupChat()) {
+        lines.push(row('Group chat', '<span style="color:#ffd700;">⚠ character features skipped</span>'));
+    }
+
+    lines.push('</table>');
+    Popup.show.text('Picture Prompt', lines.join(''));
+    return '';
+}
+
+async function ppImagesCallback() {
+    const s = getSettings();
+    const lbSettings = getLorebookSettings();
+    const lines = ['<h3>Injection Plan</h3>'];
+
+    const item = (label, value) => `<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">${label}:</span> ${escapeHtml(String(value))}</p>`;
+
+    // Character avatar
+    if ((s.injectTarget === 'character' || s.injectTarget === 'both') && !isGroupChat()) {
+        const url = getCharacterAvatarUrl();
+        lines.push(item('Character avatar', url ? '✓ available' : '✗ not set'));
+    } else if (isGroupChat() && (s.injectTarget === 'character' || s.injectTarget === 'both')) {
+        lines.push(item('Character avatar', 'skipped — group chat'));
+    }
+
+    // Gallery pins
+    const chId = Number(this_chid);
+    if (s.charExtraImagesEnabled && !isGroupChat() && chId >= 0 && characters?.[chId]?.avatar) {
+        const avatarId = characters[chId].avatar;
+        const meta = getCharGalleryMeta(avatarId);
+        const pinned = Object.entries(meta).filter(([, v]) => v.enabled);
+        const max = s.charExtraImagesMax || 8;
+        if (pinned.length) {
+            const list = pinned.slice(0, max).map(([fn, v]) => v.label || fn).join(', ');
+            lines.push(item(`Gallery pins (${Math.min(pinned.length, max)} of ${pinned.length} selected, max ${max})`, list));
+        } else {
+            lines.push(item('Gallery pins', 'none selected'));
+        }
+    }
+
+    // Persona avatar
+    if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
+        const url = getPersonaAvatarUrl();
+        lines.push(item('Persona avatar', url ? '✓ available' : '✗ not set'));
+    }
+
+    // Persona extras
+    if (s.extraImagesEnabled && user_avatar) {
+        const meta = getMetaForPersona(user_avatar);
+        const enabled = meta.filter(m => m.enabled !== false);
+        if (enabled.length) {
+            const max = s.maxExtraImages || 8;
+            const list = enabled.slice(0, max).map(m => m.label || m.filename).join(', ');
+            lines.push(item(`Persona extras (${Math.min(enabled.length, max)} of ${enabled.length} enabled, max ${max})`, list));
+        } else {
+            lines.push(item('Persona extras', 'none enabled'));
+        }
+    }
+
+    // Lorebook
+    if (s.lorebookImagesEnabled) {
+        const entries = getCachedActiveEntries();
+        if (entries.size) {
+            const max = lbSettings.lorebookImagesMax || 4;
+            let remaining = max;
+            const entryLines = [];
+            for (const [, entry] of entries) {
+                if (remaining <= 0) break;
+                const wName = entry.world || '';
+                const uid = String(entry.uid);
+                const imgs = getLorebookImages(wName, uid);
+                const enabled = imgs.filter(img => img.enabled !== false);
+                const toShow = enabled.slice(0, remaining);
+                if (toShow.length) {
+                    const title = entry.comment || uid;
+                    const imgList = toShow.map(img => img.label || img.filename).join(', ');
+                    entryLines.push(`<li>"${escapeHtml(title)}" → ${imgList}</li>`);
+                    remaining -= toShow.length;
+                }
+            }
+            if (entryLines.length) {
+                lines.push(`<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">Lorebook (${entries.size} active, max ${max}):</span></p><ul style="margin:4px 0;">${entryLines.join('')}</ul>`);
+            } else {
+                lines.push(item('Lorebook', `${entries.size} active entries, no enabled images`));
+            }
+        } else {
+            lines.push(item('Lorebook', 'no active entries'));
+        }
+    }
+
+    if (lines.length === 1) {
+        lines.push('<p style="color:var(--text-color-dim);">No images configured for injection.</p>');
+    }
+
+    Popup.show.text('Picture Prompt', lines.join(''));
+    return '';
+}
+
+async function ppCacheCallback() {
+    clearFetchCache();
+    toastr.success('Image data URL cache cleared', 'Picture Prompt');
+    return '';
+}
+
 export async function activate() {
     getSettings();
     await addSettingsUI();
@@ -1708,6 +1860,23 @@ export async function activate() {
     startPanelWatchers();
     initLorebookUI();
     initLorebookInject();
+
+    // ── Slash commands ──
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'pp-status',
+        callback: ppStatusCallback,
+        helpString: 'Show Picture Prompt extension status',
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'pp-images',
+        callback: ppImagesCallback,
+        helpString: 'Show what images would be injected on the next message',
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'pp-cache',
+        callback: ppCacheCallback,
+        helpString: 'Clear the image data URL cache',
+    }));
 
     // ── Early-visible 'calculating...' hooks ─────────────────────
     // ST's event system fires late — these bridge the visual gap by
