@@ -46,9 +46,15 @@ function isImageInliningSupported() {
 
 // ── Avatar Fetching ───────────────────────
 
-function getCharacterAvatarUrl() {
+function isGroupChat() {
     const chId = Number(this_chid);
-    if (chId < 0 || !characters?.[chId]?.avatar) return null;
+    return !Number.isFinite(chId) || chId < 0;
+}
+
+function getCharacterAvatarUrl() {
+    if (isGroupChat()) return null;
+    const chId = Number(this_chid);
+    if (!characters?.[chId]?.avatar) return null;
     return getThumbnailUrl('avatar', characters[chId].avatar);
 }
 
@@ -1528,7 +1534,8 @@ async function onPromptReady(eventData) {
     }
 
     // Inject character avatar — into the system message containing the raw personality text
-    if (s.injectTarget === 'character' || s.injectTarget === 'both') {
+    // Skip entirely in group chats (no character context); persona + lorebook still work.
+    if ((s.injectTarget === 'character' || s.injectTarget === 'both') && !isGroupChat()) {
         let charTarget = msg;
         const url = getCharacterAvatarUrl();
         if (url) {
@@ -1567,6 +1574,8 @@ async function onPromptReady(eventData) {
         if (s.charExtraImagesEnabled) {
             await injectCharGalleryImages(charTarget, quality, s.charExtraImagesMax);
         }
+    } else if ((s.injectTarget === 'character' || s.injectTarget === 'both') && isGroupChat()) {
+        warnOnce('group-chat', 'Character avatar and gallery injection skipped — not available in group chats. Persona and lorebook injection still active.');
     }
 
     // Lorebook images — inject into system messages alongside world info text
@@ -1620,8 +1629,9 @@ async function onPromptReady(eventData) {
  * @param {number} maxCount - pre-read from settings (charExtraImagesMax)
  */
 async function injectCharGalleryImages(msg, quality, maxCount) {
+    if (isGroupChat()) return;
     const chId = Number(this_chid);
-    if (chId < 0 || !characters?.[chId]?.avatar) return;
+    if (!characters?.[chId]?.avatar) return;
 
     const avatarId = characters[chId].avatar;
     const meta = getCharGalleryMeta(avatarId);
