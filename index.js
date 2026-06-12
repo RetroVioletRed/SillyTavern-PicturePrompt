@@ -18,7 +18,7 @@ import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
 import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, deactivateLorebookInject } from './lorebook-inject.js';
 import { initLorebookUI, deactivateLorebookUI } from './lorebook-ui.js';
-import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached, clearFetchCache, STORE_NAME } from './lorebook-images.js';
+import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached, clearFetchCache, STORE_NAME, enableGridDragReorder } from './lorebook-images.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { Popup } from '../../../popup.js';
@@ -1014,6 +1014,11 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
     $grid.off('dblclick', '.pp-label-edit').on('dblclick', '.pp-label-edit', function () {
         startLabelEdit($(this));
     });
+
+    // Enable drag-to-reorder
+    enableGridDragReorder(gridSelector,
+        () => getMetaForPersona(targetAvatarId),
+        (arr) => setMetaForPersona(targetAvatarId, arr));
 }
 
 // ── Inline Label Editing Helpers ─────────

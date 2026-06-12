@@ -17,8 +17,10 @@ import {
     removeLorebookImage as removeLorebookImageMeta,
     toggleLorebookImage as toggleLorebookImageMeta,
     updateLorebookImageLabel,
+    setLorebookImages,
     ensureLIMeta,
     escapeHtml,
+    enableGridDragReorder,
 } from './lorebook-images.js';
 // ── Module Name ───────────────────────────────
 
@@ -164,6 +166,14 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
             $overlay.removeClass('pp-editing').text(originalText);
         }
     });
+
+    // Enable drag-to-reorder on this grid
+    const $gridEl = $container.find('.pp-lorebook-grid');
+    if ($gridEl.length) {
+        enableGridDragReorder($gridEl, // pass jQuery object as selector
+            () => getLorebookImages(worldName, entryUid),
+            (arr) => setLorebookImages(worldName, entryUid, arr));
+    }
 }
 
 // ── Section Factory ────────────────────────────

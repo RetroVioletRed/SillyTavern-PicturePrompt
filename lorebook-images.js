@@ -377,6 +377,21 @@ export function updateLorebookImageLabel(worldName, entryUid, filename, newLabel
     }
 }
 
+/**
+ * Replace the entire image metadata array for a lorebook entry.
+ * Used by drag-to-reorder to persist a new order.
+ *
+ * @param {string}          worldName
+ * @param {string|number}   entryUid
+ * @param {Array}           arr - New metadata array
+ */
+export function setLorebookImages(worldName, entryUid, arr) {
+    const store = ensureLIMeta();
+    const key = resolveKey(worldName, entryUid);
+    store[key] = arr;
+    saveSettingsDebounced();
+}
+
 // ── Settings Management ──────────────────
 
 /**
@@ -485,4 +500,362 @@ export function setCached(key, value) {
  */
 export function clearFetchCache() {
     _fetchCache.clear();
+}
+
+// ── Drag-to-Reorder (snapping-free) ────
+
+/**
+ * Enable snapping-free drag-to-reorder on an image grid.
+ *
+ * Dragged card floats out-of-flow (position:fixed + transform following cursor).
+ * A placeholder preserves grid layout. All grid items get FLIP-animated when the
+ * placeholder moves — the dragged card itself never animates during drag.
+ *
+ * Cards must have `data-filename` and class `.picture-prompt-image-card`.
+ *
+ * @param {string|Element|jQuery} gridSelector - Grid container
+ * @param {() => Array}            getArray    - Return current metadata array
+ * @param {(arr: Array) => void}   setArray    - Persist reordered array
+ */
+export function enableGridDragReorder(gridSelector, getArray, setArray) {
+    const grid = typeof gridSelector === 'string'
+        ? document.querySelector(gridSelector)
+        : gridSelector[0] || gridSelector;
+    if (!grid) return;
+    // Tear down previous registration if present (persona switch, etc.)
+    if (grid._ppCleanup) grid._ppCleanup();
+
+    let card     = null;   // The DOM element being dragged
+    let floatLeft = 0;     // position:fixed left (pin anchor)
+    let floatTop  = 0;     // position:fixed top  (pin anchor)
+    let grabOX    = 0;     // cursor offset from card top-left at mousedown
+    let grabOY    = 0;
+    let active   = false;  // Past the drag threshold?
+    let startX, startY;
+    let placeholder  = null;
+    let lastTarget   = null;
+    let lastBefore   = null;
+    let settlingAnim = null;  // rAF id for drop-settle
+    let _dropped = false;     // Guard against double finishDrop
+
+    // ── Helpers ──────────────────────────
+
+    /** Extract clientX/clientY from mouse or touch events. */
+    function getCoords(e) {
+        if (e.touches) {
+            return e.touches.length
+                ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+                : null;
+        }
+        if (e.changedTouches) {
+            return e.changedTouches.length
+                ? { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY }
+                : null;
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    /** Find the nearest card to the cursor, excluding the dragged card & placeholder. */
+    function findTarget(x, y) {
+        let best = null, bestDist = Infinity, bestBefore = false;
+        for (const c of grid.querySelectorAll('.picture-prompt-image-card')) {
+            if (c === card) continue;
+            if (c.classList.contains('pp-placeholder')) continue;
+            const r = c.getBoundingClientRect();
+            const cx = r.left + r.width / 2;
+            const cy = r.top + r.height / 2;
+            const d = (x - cx) ** 2 + (y - cy) ** 2;
+            if (d < bestDist) { bestDist = d; best = c; bestBefore = x < cx; }
+        }
+        return best ? { card: best, before: bestBefore } : null;
+    }
+
+    /**
+     * FLIP all grid cards (excluding the dragged card & placeholder).
+     * Returns a zero-arg function that applies the FLIP animation.
+     */
+    function captureFlip() {
+        const before = new Map();
+        const items = [];
+        for (const c of grid.querySelectorAll('.picture-prompt-image-card')) {
+            if (c === card) continue;
+            if (c.classList.contains('pp-placeholder')) continue;
+            const r = c.getBoundingClientRect();
+            before.set(c, { left: r.left, top: r.top });
+            c.style.transition = 'none';
+            c.style.transform = '';
+            items.push(c);
+        }
+        return function animateFlip() {
+            for (const c of items) {
+                const r = c.getBoundingClientRect();
+                const old = before.get(c);
+                if (!old) continue;
+                const dx = old.left - r.left;
+                const dy = old.top - r.top;
+                if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+                c.style.transform = `translate(${dx}px, ${dy}px)`;
+                // Force reflow so the browser applies the transform before adding transition
+                void c.offsetHeight;
+                c.style.transition = 'transform 0.2s ease';
+                c.style.transform = '';
+            }
+        };
+    }
+
+    /** Move placeholder to new DOM position and FLIP-animate all other cards. */
+    function movePlaceholder(targetCard, before) {
+        if (!placeholder) return;
+        const animate = captureFlip();
+        const ref = before ? targetCard : targetCard.nextSibling;
+        // Don't no-op if ref is already correct — captureFlip still needs to run
+        // to clear any stale transforms, but the grid won't shift if position
+        // didn't change. Safe to call unconditionally.
+        grid.insertBefore(placeholder, ref);
+        animate();
+    }
+
+    /** Build the placeholder element. */
+    function createPlaceholder(rect) {
+        const el = document.createElement('div');
+        el.className = 'picture-prompt-image-card pp-placeholder';
+        el.style.width      = rect.width + 'px';
+        el.style.height     = rect.height + 'px';
+        el.style.minWidth   = rect.width + 'px';
+        el.style.minHeight  = rect.height + 'px';
+        el.style.flexShrink = '0';
+        el.style.flexGrow   = '0';
+        el.style.pointerEvents = 'none';
+        el.dataset.filename = '__placeholder__';
+        return el;
+    }
+
+    /** Lift the card out of flow into a fixed-position floater. */
+    function liftCard(c, rect, px, py) {
+        floatLeft = rect.left;
+        floatTop  = rect.top;
+        grabOX = startX - rect.left;
+        grabOY = startY - rect.top;
+
+        // Move to document.body so no ancestor transform alters the
+        // containing block for position:fixed (common in ST panels).
+        document.body.appendChild(c);
+
+        c.style.position   = 'fixed';
+        c.style.left       = floatLeft + 'px';
+        c.style.top        = floatTop + 'px';
+        c.style.width      = rect.width + 'px';
+        c.style.height     = rect.height + 'px';
+        c.style.margin     = '0';
+        c.style.zIndex     = '5000';
+        c.style.pointerEvents = 'none';
+        c.style.transition = 'none';
+        c.style.transform  = `translate(${px - floatLeft - grabOX}px, ${py - floatTop - grabOY}px)`;
+
+        c.classList.add('pp-dragging');
+    }
+
+    /** Cancel the drag — return card to its original position. */
+    function cancelDrag() {
+        if (!card) return;
+        cleanupAfterDrop();
+    }
+
+    /** Persist the current grid order and clean up. */
+    function dropCard() {
+        if (!card) return;
+        if (!placeholder) { cleanupAfterDrop(); return; }
+
+        const el = card;
+        const ph  = placeholder;
+        card = null;
+        placeholder = null;
+
+        // Calculate the visual delta from where the card is now → placeholder
+        const phRect = ph.getBoundingClientRect();
+        el.style.transition = 'left 0.22s cubic-bezier(0.2, 0, 0, 1), top 0.22s cubic-bezier(0.2, 0, 0, 1)';
+        el.style.left  = phRect.left + 'px';
+        el.style.top   = phRect.top + 'px';
+        el.style.transform = 'none';
+
+        function onSettle() {
+            el.removeEventListener('transitionend', onSettle);
+            finishDrop(el, ph);
+        }
+        el.addEventListener('transitionend', onSettle);
+        // Safety: if transitionend never fires (e.g. card already at position)
+        settlingAnim = requestAnimationFrame(() => {
+            settlingAnim = requestAnimationFrame(() => {
+                if (settlingAnim) {
+                    settleNow();
+                }
+            });
+        });
+
+        function settleNow() {
+            if (settlingAnim) { cancelAnimationFrame(settlingAnim); settlingAnim = null; }
+            el.removeEventListener('transitionend', onSettle);
+            finishDrop(el, ph);
+        }
+    }
+
+    function finishDrop(el, ph) {
+        if (_dropped) return;
+        _dropped = true;
+        settlingAnim = null;
+        // Only proceed if placeholder is still in the DOM
+        if (!ph.parentNode) return;
+        grid.insertBefore(el, ph);
+        ph.remove();
+        el.style.position   = '';
+        el.style.left       = '';
+        el.style.top        = '';
+        el.style.width      = '';
+        el.style.height     = '';
+        el.style.margin     = '';
+        el.style.zIndex     = '';
+        el.style.pointerEvents = '';
+        el.style.transition = '';
+        el.style.transform  = '';
+        el.classList.remove('pp-dragging');
+
+        persistOrder();
+    }
+
+    function cleanupAfterDrop() {
+        if (!card) return;
+        const el = card;
+        card = null;
+
+        // If the card was lifted (appended to document.body), move it back.
+        if (placeholder && placeholder.parentNode) {
+            grid.insertBefore(el, placeholder);
+        }
+        if (placeholder) { placeholder.remove(); placeholder = null; }
+        if (settlingAnim) { cancelAnimationFrame(settlingAnim); settlingAnim = null; }
+        el.style.position   = '';
+        el.style.left       = '';
+        el.style.top        = '';
+        el.style.width      = '';
+        el.style.height     = '';
+        el.style.margin     = '';
+        el.style.zIndex     = '';
+        el.style.pointerEvents = '';
+        el.style.transition = '';
+        el.style.transform  = '';
+        el.classList.remove('pp-dragging');
+        // Clear any leftover transforms on other cards
+        for (const c of grid.querySelectorAll('.picture-prompt-image-card')) {
+            c.style.transition = '';
+            c.style.transform  = '';
+        }
+        active = false;
+        lastTarget = null;
+        lastBefore = null;
+    }
+
+    function persistOrder() {
+        const filenames = [...grid.querySelectorAll('.picture-prompt-image-card')]
+            .filter(c => !c.classList.contains('pp-placeholder'))
+            .map(c => c.dataset.filename);
+        const arr = getArray();
+        const visible = filenames.map(fn => arr.find(i => i.filename === fn)).filter(Boolean);
+        const orphans = arr.filter(i => !filenames.includes(i.filename));
+        const reordered = visible.concat(orphans);
+        if (reordered.length === arr.length) {
+            setArray(reordered);
+        }
+    }
+
+    // ── Event handlers ───────────────────
+
+    function onPointerDown(e) {
+        if (e.button !== undefined && e.button !== 0) return; // non-left mouse
+        const c = e.target.closest('.picture-prompt-image-card');
+        if (!c) return;
+        if (c.classList.contains('pp-placeholder')) return;
+        if (e.target.closest('button, input, label')) return;
+        e.preventDefault();
+
+        card = c;
+        active = false;
+        _dropped = false;
+        lastTarget = null;
+        lastBefore = null;
+        const coords = getCoords(e);
+        if (!coords) return;
+        startX = coords.x;
+        startY = coords.y;
+    }
+
+    function onPointerMove(e) {
+        if (!card) return;
+        const coords = getCoords(e);
+        if (!coords) return;
+        const cx = coords.x, cy = coords.y;
+        if (!active) {
+            if (Math.abs(cx - startX) < 3 && Math.abs(cy - startY) < 3) return;
+            // ── LIFT ──
+            active = true;
+            const rect = card.getBoundingClientRect();  // capture BEFORE placeholder insertion
+            placeholder = createPlaceholder(rect);
+            grid.insertBefore(placeholder, card);
+            liftCard(card, rect, cx, cy);
+            lastTarget = null;
+            lastBefore = null;
+        }
+
+        // Update floating card position (maintain the grab offset)
+        card.style.transform = `translate(${cx - floatLeft - grabOX}px, ${cy - floatTop - grabOY}px)`;
+
+        const t = findTarget(cx, cy);
+        if (!t) {
+            lastTarget = null;
+            lastBefore = null;
+            return;
+        }
+        if (t.card === lastTarget && t.before === lastBefore) return;
+        lastTarget = t.card;
+        lastBefore = t.before;
+        movePlaceholder(t.card, t.before);
+    }
+
+    function onPointerUp(e) {
+        if (!card) return;
+        if (!active) {
+            // Never crossed threshold — just a click, abort
+            cleanupAfterDrop();
+            return;
+        }
+        dropCard();
+    }
+
+    function onKeyDown(e) {
+        if (e.key === 'Escape' && card && active) {
+            e.preventDefault();
+            cancelDrag();
+        }
+    }
+
+    // ── Bind ─────────────────────────────
+
+    grid.addEventListener('mousedown', onPointerDown);
+    grid.addEventListener('touchstart', onPointerDown, { passive: false });
+    document.addEventListener('mousemove', onPointerMove);
+    document.addEventListener('touchmove', onPointerMove, { passive: false });
+    document.addEventListener('mouseup', onPointerUp);
+    document.addEventListener('touchend', onPointerUp);
+    document.addEventListener('keydown', onKeyDown);
+
+    // Store cleanup for re-init (persona switch etc.)
+    grid._ppCleanup = () => {
+        grid.removeEventListener('mousedown', onPointerDown);
+        grid.removeEventListener('touchstart', onPointerDown);
+        document.removeEventListener('mousemove', onPointerMove);
+        document.removeEventListener('touchmove', onPointerMove);
+        document.removeEventListener('mouseup', onPointerUp);
+        document.removeEventListener('touchend', onPointerUp);
+        document.removeEventListener('keydown', onKeyDown);
+        delete grid._ppCleanup;
+    };
 }

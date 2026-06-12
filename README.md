@@ -17,7 +17,7 @@ Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ol
 
 ## Requirements
 
-- SillyTavern 1.12+
+- SillyTavern 1.14+
 - A **Chat Completion** API (Text Completion is not supported)
 - A vision-capable model (latest Gemma 4, Qwen, ChatGPT, Grok etc.)
 - **"Inline image media"** enabled in AI Response settings
