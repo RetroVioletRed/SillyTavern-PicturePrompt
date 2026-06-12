@@ -373,6 +373,21 @@
     text-align: center;
 }
 
+.pp-right-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+.pp-quality-select {
+    font-size: 0.8em;
+    padding: 4px;
+    height: auto;
+    width: auto;
+    max-width: 100px;
+}
+
 .pp-estimate {
     margin-top: 0.1rem;
     padding-top: 0.15rem;

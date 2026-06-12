@@ -23,6 +23,9 @@
                         <input id="picture_prompt_inject_char" type="checkbox">
                         Inject Character Avatar
                     </label>
+                    <select class="pp-quality-select" id="picture_prompt_quality_char_avatar" title="Image detail quality for character avatar">
+                        <option value="global">Global</option><option value="low">Low</option><option value="auto">Auto</option><option value="high">High</option>
+                    </select>
                 </div>
                 <div class="pp-sub-row" id="pp_char_label_row">
                     <span class="pp-sub-label">Label:</span>
@@ -37,6 +40,9 @@
                         <input id="picture_prompt_inject_persona" type="checkbox">
                         Inject Persona Avatar
                     </label>
+                    <select class="pp-quality-select" id="picture_prompt_quality_persona_avatar" title="Image detail quality for persona avatar">
+                        <option value="global">Global</option><option value="low">Low</option><option value="auto">Auto</option><option value="high">High</option>
+                    </select>
                 </div>
                 <div class="pp-sub-row" id="pp_persona_label_row">
                     <span class="pp-sub-label">Label:</span>
@@ -54,10 +60,15 @@
                         <input id="picture_prompt_extra_images_enabled" type="checkbox">
                         Inject persona extra images
                     </label>
-                    <span class="pp-counter" id="pp_extra_max_row">
+                    <div class="pp-right-controls" id="pp_extras_controls">
+                    <span class="pp-counter">
                         <label for="picture_prompt_extra_images_max">Max</label>
                         <input id="picture_prompt_extra_images_max" class="text_pole" type="number" min="0" max="20" value="8" title="Maximum number of extra images to inject per request">
                     </span>
+                    <select class="pp-quality-select" id="picture_prompt_quality_extra_images" title="Image detail quality for persona extra images">
+                        <option value="global">Global</option><option value="low">Low</option><option value="auto">Auto</option><option value="high">High</option>
+                    </select>
+                    </div>
                 </div>
 
                 <!-- Gallery Images -->
@@ -66,10 +77,15 @@
                         <input id="picture_prompt_char_extra_enabled" type="checkbox">
                         Inject gallery images
                     </label>
-                    <span class="pp-counter" id="pp_gallery_max_row">
+                    <div class="pp-right-controls" id="pp_gallery_controls">
+                    <span class="pp-counter">
                         <label for="picture_prompt_char_extra_max">Max</label>
                         <input id="picture_prompt_char_extra_max" class="text_pole" type="number" min="0" max="20" value="8" title="Maximum number of gallery images to inject per request">
                     </span>
+                    <select class="pp-quality-select" id="picture_prompt_quality_char_extra" title="Image detail quality for gallery images">
+                        <option value="global">Global</option><option value="low">Low</option><option value="auto">Auto</option><option value="high">High</option>
+                    </select>
+                    </div>
                 </div>
 
                 <!-- Lorebook Images -->
@@ -78,10 +94,15 @@
                         <input id="picture_prompt_lorebook_enabled" type="checkbox">
                         Inject lorebook entry images
                     </label>
-                    <span class="pp-counter" id="pp_lorebook_max_row">
+                    <div class="pp-right-controls" id="pp_lorebook_controls">
+                    <span class="pp-counter">
                         <label for="picture_prompt_lorebook_max">Max</label>
                         <input id="picture_prompt_lorebook_max" class="text_pole" type="number" min="0" max="20" value="4" title="Maximum number of lorebook images to inject per request">
                     </span>
+                    <select class="pp-quality-select" id="picture_prompt_quality_lorebook" title="Image detail quality for lorebook images">
+                        <option value="global">Global</option><option value="low">Low</option><option value="auto">Auto</option><option value="high">High</option>
+                    </select>
+                    </div>
                 </div>
             </div>
             <hr>

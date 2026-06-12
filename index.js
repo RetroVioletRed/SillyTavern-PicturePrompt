@@ -54,6 +54,19 @@ function isGroupChat() {
     return !Number.isFinite(chId) || chId < 0;
 }
 
+/**
+ * Resolve a per-source quality override. Returns the global
+ * inline_image_quality when the source setting is 'global'.
+ * @param {string} sourceSetting - quality override setting for a source
+ * @returns {string} 'low', 'auto', or 'high'
+ */
+function getSourceQuality(sourceSetting) {
+    if (!sourceSetting || sourceSetting === 'global') {
+        return oai_settings?.inline_image_quality || 'auto';
+    }
+    return sourceSetting;
+}
+
 function getCharacterAvatarUrl() {
     if (isGroupChat()) return null;
     const chId = Number(this_chid);
@@ -191,6 +204,11 @@ const defaultSettings = {
     charExtraImagesMax: 8,
     lorebookImagesEnabled: false,
     lorebookImagesMax: 4,
+    qualityCharAvatar: 'global',
+    qualityPersonaAvatar: 'global',
+    qualityExtraImages: 'global',
+    qualityGalleryImages: 'global',
+    qualityLorebookImages: 'global',
 };
 
 function migrateOldSettings() {
@@ -236,15 +254,22 @@ function applySettingsToUI() {
     $('#picture_prompt_label_user').val(s.labelUser || '');
     $('#pp_char_label_row').toggle(s.injectChar);
     $('#pp_persona_label_row').toggle(s.injectPersona);
-    $('#pp_extra_max_row').toggle(s.extraImagesEnabled ?? true);
-    $('#pp_gallery_max_row').toggle(s.charExtraImagesEnabled ?? false);
-    $('#pp_lorebook_max_row').toggle(s.lorebookImagesEnabled ?? false);
+    $('#pp_extras_controls').toggle(s.extraImagesEnabled ?? true);
+    $('#pp_gallery_controls').toggle(s.charExtraImagesEnabled ?? false);
+    $('#pp_lorebook_controls').toggle(s.lorebookImagesEnabled ?? false);
+    $('#picture_prompt_quality_char_avatar').toggle(s.injectChar);
+    $('#picture_prompt_quality_persona_avatar').toggle(s.injectPersona);
     $('#picture_prompt_extra_images_enabled').prop('checked', s.extraImagesEnabled ?? true);
     $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
     $('#picture_prompt_char_extra_enabled').prop('checked', s.charExtraImagesEnabled ?? false);
     $('#picture_prompt_char_extra_max').val(s.charExtraImagesMax ?? 8);
     $('#picture_prompt_lorebook_enabled').prop('checked', s.lorebookImagesEnabled ?? false);
     $('#picture_prompt_lorebook_max').val(s.lorebookImagesMax ?? 4);
+    $('#picture_prompt_quality_char_avatar').val(s.qualityCharAvatar ?? 'global');
+    $('#picture_prompt_quality_persona_avatar').val(s.qualityPersonaAvatar ?? 'global');
+    $('#picture_prompt_quality_extra_images').val(s.qualityExtraImages ?? 'global');
+    $('#picture_prompt_quality_char_extra').val(s.qualityGalleryImages ?? 'global');
+    $('#picture_prompt_quality_lorebook').val(s.qualityLorebookImages ?? 'global');
     refreshTokenEstimate();
 }
 
@@ -257,11 +282,13 @@ function registerSettingsListeners() {
         getSettings().injectChar = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
         $('#pp_char_label_row').toggle(this.checked);
+        $('#picture_prompt_quality_char_avatar').toggle(this.checked);
     });
     $('#picture_prompt_inject_persona').on('change', function () {
         getSettings().injectPersona = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
         $('#pp_persona_label_row').toggle(this.checked);
+        $('#picture_prompt_quality_persona_avatar').toggle(this.checked);
     });
     $('#picture_prompt_label_char').on('input', function () {
         getSettings().labelChar = String($(this).val());
@@ -274,7 +301,7 @@ function registerSettingsListeners() {
     $('#picture_prompt_extra_images_enabled').on('change', function () {
         getSettings().extraImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
-        $('#pp_extra_max_row').toggle(this.checked);
+        $('#pp_extras_controls').toggle(this.checked);
     });
     $('#picture_prompt_extra_images_max').on('input', function () {
         getSettings().maxExtraImages = parseInt($(this).val(), 10) || 8;
@@ -283,7 +310,7 @@ function registerSettingsListeners() {
     $('#picture_prompt_char_extra_enabled').on('change', function () {
         getSettings().charExtraImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
-        $('#pp_gallery_max_row').toggle(this.checked);
+        $('#pp_gallery_controls').toggle(this.checked);
     });
     $('#picture_prompt_char_extra_max').on('input', function () {
         getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
@@ -292,10 +319,32 @@ function registerSettingsListeners() {
     $('#picture_prompt_lorebook_enabled').on('change', function () {
         getSettings().lorebookImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
-        $('#pp_lorebook_max_row').toggle(this.checked);
+        $('#pp_lorebook_controls').toggle(this.checked);
     });
     $('#picture_prompt_lorebook_max').on('input', function () {
         getSettings().lorebookImagesMax = parseInt($(this).val(), 10) || 4;
+        getContext().saveSettingsDebounced();
+    });
+
+    // Quality selectors
+    $('#picture_prompt_quality_char_avatar').on('change', function () {
+        getSettings().qualityCharAvatar = String($(this).val());
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_quality_persona_avatar').on('change', function () {
+        getSettings().qualityPersonaAvatar = String($(this).val());
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_quality_extra_images').on('change', function () {
+        getSettings().qualityExtraImages = String($(this).val());
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_quality_char_extra').on('change', function () {
+        getSettings().qualityGalleryImages = String($(this).val());
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_quality_lorebook').on('change', function () {
+        getSettings().qualityLorebookImages = String($(this).val());
         getContext().saveSettingsDebounced();
     });
 }
@@ -1201,11 +1250,9 @@ async function estimateImageTokens(dataUrl, quality) {
  */
 async function getTotalImageTokenEstimate() {
     const s = getSettings();
-    const quality = oai_settings?.inline_image_quality || 'auto';
-    let totalLow = 0;
-    let totalHigh = 0;
-    let totalAuto = 0;
+    let total = 0;
     let imageCount = 0;
+    const sources = [];
 
     // Character avatar
     if (s.injectChar) {
@@ -1213,10 +1260,10 @@ async function getTotalImageTokenEstimate() {
         if (url) {
             const b64 = await urlToBase64(url);
             if (b64) {
-                totalLow += await estimateImageTokens(b64, 'low');
-                totalHigh += await estimateImageTokens(b64, 'high');
-                totalAuto += await estimateImageTokens(b64, 'auto');
+                const q = getSourceQuality(s.qualityCharAvatar);
+                total += await estimateImageTokens(b64, q);
                 imageCount++;
+                sources.push({ name: 'Char', quality: s.qualityCharAvatar });
             }
         }
     }
@@ -1227,10 +1274,10 @@ async function getTotalImageTokenEstimate() {
         if (url) {
             const b64 = await urlToBase64(url);
             if (b64) {
-                totalLow += await estimateImageTokens(b64, 'low');
-                totalHigh += await estimateImageTokens(b64, 'high');
-                totalAuto += await estimateImageTokens(b64, 'auto');
+                const q = getSourceQuality(s.qualityPersonaAvatar);
+                total += await estimateImageTokens(b64, q);
                 imageCount++;
+                sources.push({ name: 'Persona', quality: s.qualityPersonaAvatar });
             }
         }
     }
@@ -1238,12 +1285,12 @@ async function getTotalImageTokenEstimate() {
     // Persona extra images
     if (s.extraImagesEnabled && user_avatar) {
         const extras = await getExtraImagesForInjection(user_avatar);
+        const q = getSourceQuality(s.qualityExtraImages);
         for (const img of extras) {
-            totalLow += await estimateImageTokens(img.dataUrl, 'low');
-            totalHigh += await estimateImageTokens(img.dataUrl, 'high');
-            totalAuto += await estimateImageTokens(img.dataUrl, 'auto');
+            total += await estimateImageTokens(img.dataUrl, q);
             imageCount++;
         }
+        if (extras.length) sources.push({ name: 'Extras', quality: s.qualityExtraImages });
     }
 
     // Character gallery images
@@ -1260,16 +1307,18 @@ async function getTotalImageTokenEstimate() {
             if (toInject.length > 0) {
                 const folder = getCharGalleryFolder();
                 if (folder) {
+                    const q = getSourceQuality(s.qualityGalleryImages);
+                    let galleryCount = 0;
                     for (const filename of toInject) {
                         const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
                         const b64 = await urlToBase64(url);
                         if (b64) {
-                            totalLow += await estimateImageTokens(b64, 'low');
-                            totalHigh += await estimateImageTokens(b64, 'high');
-                            totalAuto += await estimateImageTokens(b64, 'auto');
+                            total += await estimateImageTokens(b64, q);
                             imageCount++;
+                            galleryCount++;
                         }
                     }
+                    if (galleryCount) sources.push({ name: 'Gallery', quality: s.qualityGalleryImages });
                 }
             }
         }
@@ -1281,18 +1330,17 @@ async function getTotalImageTokenEstimate() {
         const entries = getCachedActiveEntries();
         let lbInjected = 0;
         const lbMax = lbSettings.lorebookImagesMax || 4;
-        for (const [key, entry] of entries) {
+        const q = getSourceQuality(s.qualityLorebookImages);
+        for (const [, entry] of entries) {
             if (lbInjected >= lbMax) break;
             const images = getLorebookImages(entry.world || '', String(entry.uid));
             const enabledImages = images.filter(img => img.enabled !== false);
             const wName = entry.world || '';
             const uid = String(entry.uid);
 
-            // Gather images to inject for this entry, honouring the global limit
             const toInject = enabledImages.slice(0, lbMax - lbInjected);
             if (!toInject.length) break;
 
-            // Separate cached vs. uncached
             const dataUrlByFilename = new Map();
             const uncachedFilenames = [];
             for (const img of toInject) {
@@ -1305,7 +1353,6 @@ async function getTotalImageTokenEstimate() {
                 }
             }
 
-            // Batch-read uncached images in one transaction + parallel conversion
             if (uncachedFilenames.length > 0) {
                 try {
                     const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
@@ -1317,23 +1364,21 @@ async function getTotalImageTokenEstimate() {
                 } catch { /* skip batch failures */ }
             }
 
-            // Process images in original order
             for (const img of toInject) {
                 if (lbInjected >= lbMax) break;
                 const b64 = dataUrlByFilename.get(img.filename);
                 if (!b64) continue;
                 try {
-                    totalLow += await estimateImageTokens(b64, 'low');
-                    totalHigh += await estimateImageTokens(b64, 'high');
-                    totalAuto += await estimateImageTokens(b64, 'auto');
+                    total += await estimateImageTokens(b64, q);
                     imageCount++;
                     lbInjected++;
                 } catch { /* skip individual token estimate failures */ }
             }
         }
+        if (lbInjected) sources.push({ name: 'Lorebook', quality: s.qualityLorebookImages });
     }
 
-    return { low: totalLow, high: totalHigh, auto: totalAuto, imageCount };
+    return { total, imageCount, sources };
 }
 
 let _tokenEstimateRunning = false;
@@ -1381,30 +1426,20 @@ async function refreshTokenEstimate() {
             $el2.text('0 (no images)').css('color', 'var(--text-color-dim)');
             $detail2.text('');
         } else {
-            const quality = oai_settings?.inline_image_quality || 'auto';
             const provider = main_api;
-
             let contextLabel = '';
-            if (provider === 'openai') {
-                if (quality === 'low') contextLabel = 'OpenAI · low detail';
-                else if (quality === 'high') contextLabel = 'OpenAI · high detail';
-                else contextLabel = 'OpenAI · auto detail';
-            } else if (provider === 'anthropic') {
-                contextLabel = 'Claude · pixel-based';
-            } else if (provider === 'google') {
-                contextLabel = 'Gemini · tiled';
-            } else {
-                contextLabel = quality === 'low' ? 'Low detail' : quality === 'high' ? 'High detail' : 'Auto detail';
-            }
+            if (provider === 'openai') contextLabel = 'OpenAI';
+            else if (provider === 'anthropic') contextLabel = 'Claude · pixel-based';
+            else if (provider === 'google') contextLabel = 'Gemini · tiled';
+            else contextLabel = 'Native';
 
-            if (quality === 'low') {
-                $el2.text(`≈ ${est.low} tokens`).css('color', 'var(--success-color, #4caf50)');
-            } else if (quality === 'high') {
-                $el2.text(`≈ ${est.high} tokens`).css('color', 'var(--success-color, #4caf50)');
-            } else {
-                $el2.text(`≈ ${est.auto} tokens`).css('color', 'var(--success-color, #4caf50)');
+            $el2.text(`≈ ${Math.round(est.total)} tokens`).css('color', 'var(--success-color, #4caf50)');
+            let detailParts = [`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`];
+            for (const src of est.sources) {
+                const qLabel = src.quality === 'global' ? 'global' : src.quality;
+                detailParts.push(`${src.name}: ${qLabel}`);
             }
-            $detail2.text(`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`);
+            $detail2.text(detailParts.join(' · '));
         }
     } catch (err) {
         console.warn('[Picture Prompt] Token estimate failed:', err);
@@ -1527,7 +1562,6 @@ async function onPromptReady(eventData) {
     if (!msg) return;
     if (!ensureContentBlocks(msg)) return;
 
-    const quality = oai_settings?.inline_image_quality || 'auto';
     const context = getContext();
     const userName = context.name1 || 'User';
     const charName = context.name2 || 'Character';
@@ -1589,10 +1623,10 @@ async function onPromptReady(eventData) {
                     ? chat.find(m => m.role === 'system' && getMessageText(m).includes(charSearchText))
                     : null;
                 if (charMsg && ensureContentBlocks(charMsg)) {
-                    injectImageToMessage(charMsg, base64Data, label, quality);
+                    injectImageToMessage(charMsg, base64Data, label, getSourceQuality(s.qualityCharAvatar));
                     charTarget = charMsg;
                 } else {
-                    injectImageToMessage(msg, base64Data, label, quality);
+                    injectImageToMessage(msg, base64Data, label, getSourceQuality(s.qualityCharAvatar));
                 }
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
@@ -1603,7 +1637,7 @@ async function onPromptReady(eventData) {
 
         // Character gallery extras — land right after character avatar in the same message
         if (s.charExtraImagesEnabled) {
-            await injectCharGalleryImages(charTarget, quality, s.charExtraImagesMax);
+            await injectCharGalleryImages(charTarget, getSourceQuality(s.qualityGalleryImages), s.charExtraImagesMax);
         }
     } else if (s.injectChar && isGroupChat()) {
         warnOnce('group-chat', 'Character avatar and gallery injection skipped — not available in group chats. Persona and lorebook injection still active.');
@@ -1611,7 +1645,7 @@ async function onPromptReady(eventData) {
 
     // Lorebook images — inject into system messages alongside world info text
     if (s.lorebookImagesEnabled) {
-        await injectLorebookImages(chat, quality, lbSettings);
+        await injectLorebookImages(chat, getSourceQuality(s.qualityLorebookImages), lbSettings);
     }
 
     // Inject persona avatar — into the system message containing the persona description text
@@ -1627,10 +1661,10 @@ async function onPromptReady(eventData) {
                     ? chat.find(m => m.role === 'system' && getMessageText(m).includes(resolvedPersonaDesc))
                     : null;
                 if (personaMsg && ensureContentBlocks(personaMsg)) {
-                    injectImageToMessage(personaMsg, base64Data, label, quality);
+                    injectImageToMessage(personaMsg, base64Data, label, getSourceQuality(s.qualityPersonaAvatar));
                     personaTarget = personaMsg;
                 } else {
-                    injectImageToMessage(msg, base64Data, label, quality);
+                    injectImageToMessage(msg, base64Data, label, getSourceQuality(s.qualityPersonaAvatar));
                 }
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
@@ -1647,7 +1681,7 @@ async function onPromptReady(eventData) {
                 if (perImageLabel) {
                     personaTarget.content.push({ type: 'text', text: '\n' + perImageLabel });
                 }
-                personaTarget.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: quality } });
+                personaTarget.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: getSourceQuality(s.qualityExtraImages) } });
             }
         }
     }
@@ -1795,7 +1829,8 @@ async function ppImagesCallback() {
     // Character avatar
     if (s.injectChar && !isGroupChat()) {
         const url = getCharacterAvatarUrl();
-        lines.push(item('Character avatar', url ? '✓ available' : '✗ not set'));
+        const qLabel = s.qualityCharAvatar === 'global' ? '' : ` · ${s.qualityCharAvatar}`;
+        lines.push(item('Character avatar', (url ? '✓ available' : '✗ not set') + qLabel));
     } else if (isGroupChat() && s.injectChar) {
         lines.push(item('Character avatar', 'skipped — group chat'));
     }
@@ -1807,9 +1842,10 @@ async function ppImagesCallback() {
         const meta = getCharGalleryMeta(avatarId);
         const pinned = Object.entries(meta).filter(([, v]) => v.enabled);
         const max = s.charExtraImagesMax || 8;
+        const qLabel = s.qualityGalleryImages === 'global' ? '' : ` · ${s.qualityGalleryImages}`;
         if (pinned.length) {
             const list = pinned.slice(0, max).map(([fn, v]) => v.label || fn).join(', ');
-            lines.push(item(`Gallery pins (${Math.min(pinned.length, max)} of ${pinned.length} selected, max ${max})`, list));
+            lines.push(item(`Gallery pins (${Math.min(pinned.length, max)} of ${pinned.length} selected, max ${max})${qLabel}`, list));
         } else {
             lines.push(item('Gallery pins', 'none selected'));
         }
@@ -1818,17 +1854,19 @@ async function ppImagesCallback() {
     // Persona avatar
     if (s.injectPersona) {
         const url = getPersonaAvatarUrl();
-        lines.push(item('Persona avatar', url ? '✓ available' : '✗ not set'));
+        const qLabel = s.qualityPersonaAvatar === 'global' ? '' : ` · ${s.qualityPersonaAvatar}`;
+        lines.push(item('Persona avatar', (url ? '✓ available' : '✗ not set') + qLabel));
     }
 
     // Persona extras
     if (s.extraImagesEnabled && user_avatar) {
         const meta = getMetaForPersona(user_avatar);
         const enabled = meta.filter(m => m.enabled !== false);
+        const qLabel = s.qualityExtraImages === 'global' ? '' : ` · ${s.qualityExtraImages}`;
         if (enabled.length) {
             const max = s.maxExtraImages || 8;
             const list = enabled.slice(0, max).map(m => m.label || m.filename).join(', ');
-            lines.push(item(`Persona extras (${Math.min(enabled.length, max)} of ${enabled.length} enabled, max ${max})`, list));
+            lines.push(item(`Persona extras (${Math.min(enabled.length, max)} of ${enabled.length} enabled, max ${max})${qLabel}`, list));
         } else {
             lines.push(item('Persona extras', 'none enabled'));
         }
@@ -1837,6 +1875,7 @@ async function ppImagesCallback() {
     // Lorebook
     if (s.lorebookImagesEnabled) {
         const entries = getCachedActiveEntries();
+        const lbQ = s.qualityLorebookImages === 'global' ? '' : ` · ${s.qualityLorebookImages}`;
         if (entries.size) {
             const max = lbSettings.lorebookImagesMax || 4;
             let remaining = max;
@@ -1856,7 +1895,7 @@ async function ppImagesCallback() {
                 }
             }
             if (entryLines.length) {
-                lines.push(`<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">Lorebook (${entries.size} active, max ${max}):</span></p><ul style="margin:4px 0;">${entryLines.join('')}</ul>`);
+                lines.push(`<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">Lorebook (${entries.size} active, max ${max})${lbQ}:</span></p><ul style="margin:4px 0;">${entryLines.join('')}</ul>`);
             } else {
                 lines.push(item('Lorebook', `${entries.size} active entries, no enabled images`));
             }
