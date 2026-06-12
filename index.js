@@ -26,6 +26,7 @@ import { Popup } from '../../../popup.js';
 // ── User Feedback ─────────────────
 
 let _shownErrors = {};
+let _ppInjectionStats = null;  // { total, imageCount, sources } from last injection
 
 function warnOnce(key, message) {
     if (_shownErrors[key]) return;
@@ -1584,6 +1585,7 @@ function getFirstTextBlock(msg) {
 
 async function onPromptReady(eventData) {
     const s = getSettings();
+    _ppInjectionStats = null;
     if (!s.enabled) return;
     if (!isImageInliningSupported()) return;
 
@@ -1721,6 +1723,9 @@ async function onPromptReady(eventData) {
             }
         }
     }
+
+    // Capture injection stats for the post-generation indicator
+    _ppInjectionStats = await getTotalImageTokenEstimate();
 }
 
 /**
@@ -1787,11 +1792,20 @@ async function addSettingsUI() {
 
 function _onChatChanged() {
     clearFetchCache();
+    _ppInjectionStats = null;
     refreshTokenEstimate();
 }
 
 function _onSettingsUpdated() {
     refreshTokenEstimate();
+}
+
+function _onGenerationEnded() {
+    if (!_ppInjectionStats || !_ppInjectionStats.imageCount) return;
+    $('.pp-injection-indicator').remove();
+    const s = _ppInjectionStats;
+    const $indicator = $(`<div class="pp-injection-indicator">🖼 ${s.imageCount} image${s.imageCount !== 1 ? 's' : ''} · ~${s.total.toLocaleString()} tokens</div>`);
+    $('#chat .mes').last().append($indicator);
 }
 
 function _onChatBlockClick(e) {
@@ -1958,6 +1972,7 @@ export async function activate() {
     await pruneOrphanedPersonaImages();
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
+    eventSource.on(event_types.GENERATION_ENDED, _onGenerationEnded);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
     eventSource.on(event_types.CHAT_CHANGED, _onChatChanged);
     eventSource.on(event_types.SETTINGS_UPDATED, _onSettingsUpdated);
@@ -2029,6 +2044,7 @@ export async function deactivate() {
 
     // ── EventSource listeners ──
     eventSource.removeListener(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
+    eventSource.removeListener(event_types.GENERATION_ENDED, _onGenerationEnded);
     eventSource.removeListener(event_types.PERSONA_CHANGED, onPersonaChanged);
     eventSource.removeListener(event_types.CHAT_CHANGED, _onChatChanged);
     eventSource.removeListener(event_types.SETTINGS_UPDATED, _onSettingsUpdated);
