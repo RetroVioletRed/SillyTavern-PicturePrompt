@@ -181,7 +181,8 @@ const moduleName = 'picture_prompt';
 
 const defaultSettings = {
     enabled: true,
-    injectTarget: 'character',
+    injectChar: true,
+    injectPersona: false,
     labelChar: 'This is how you look:',
     labelUser: 'This is how {{user}} looks:',
     extraImagesEnabled: true,
@@ -216,15 +217,28 @@ function getSettings() {
     for (const key of Object.keys(defaultSettings)) {
         if (s[key] === undefined) s[key] = defaultSettings[key];
     }
+    // Migrate pre-v1.5 injectTarget to injectChar/injectPersona
+    if (s.injectTarget !== undefined) {
+        s.injectChar = s.injectChar ?? (s.injectTarget === 'character' || s.injectTarget === 'both');
+        s.injectPersona = s.injectPersona ?? (s.injectTarget === 'persona' || s.injectTarget === 'both');
+        delete s.injectTarget;
+        context.saveSettingsDebounced();
+    }
     return s;
 }
 
 function applySettingsToUI() {
     const s = getSettings();
     $('#picture_prompt_enabled').prop('checked', s.enabled);
-    $('#picture_prompt_target').val(s.injectTarget);
+    $('#picture_prompt_inject_char').prop('checked', s.injectChar);
+    $('#picture_prompt_inject_persona').prop('checked', s.injectPersona);
     $('#picture_prompt_label_char').val(s.labelChar || '');
     $('#picture_prompt_label_user').val(s.labelUser || '');
+    $('#pp_char_label_row').toggle(s.injectChar);
+    $('#pp_persona_label_row').toggle(s.injectPersona);
+    $('#pp_extra_max_row').toggle(s.extraImagesEnabled ?? true);
+    $('#pp_gallery_max_row').toggle(s.charExtraImagesEnabled ?? false);
+    $('#pp_lorebook_max_row').toggle(s.lorebookImagesEnabled ?? false);
     $('#picture_prompt_extra_images_enabled').prop('checked', s.extraImagesEnabled ?? true);
     $('#picture_prompt_extra_images_max').val(s.maxExtraImages ?? 8);
     $('#picture_prompt_char_extra_enabled').prop('checked', s.charExtraImagesEnabled ?? false);
@@ -239,9 +253,15 @@ function registerSettingsListeners() {
         getSettings().enabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
     });
-    $('#picture_prompt_target').on('change', function () {
-        getSettings().injectTarget = String($(this).val());
+    $('#picture_prompt_inject_char').on('change', function () {
+        getSettings().injectChar = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
+        $('#pp_char_label_row').toggle(this.checked);
+    });
+    $('#picture_prompt_inject_persona').on('change', function () {
+        getSettings().injectPersona = !!$(this).prop('checked');
+        getContext().saveSettingsDebounced();
+        $('#pp_persona_label_row').toggle(this.checked);
     });
     $('#picture_prompt_label_char').on('input', function () {
         getSettings().labelChar = String($(this).val());
@@ -254,6 +274,7 @@ function registerSettingsListeners() {
     $('#picture_prompt_extra_images_enabled').on('change', function () {
         getSettings().extraImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
+        $('#pp_extra_max_row').toggle(this.checked);
     });
     $('#picture_prompt_extra_images_max').on('input', function () {
         getSettings().maxExtraImages = parseInt($(this).val(), 10) || 8;
@@ -262,6 +283,7 @@ function registerSettingsListeners() {
     $('#picture_prompt_char_extra_enabled').on('change', function () {
         getSettings().charExtraImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
+        $('#pp_gallery_max_row').toggle(this.checked);
     });
     $('#picture_prompt_char_extra_max').on('input', function () {
         getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
@@ -270,6 +292,7 @@ function registerSettingsListeners() {
     $('#picture_prompt_lorebook_enabled').on('change', function () {
         getSettings().lorebookImagesEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
+        $('#pp_lorebook_max_row').toggle(this.checked);
     });
     $('#picture_prompt_lorebook_max').on('input', function () {
         getSettings().lorebookImagesMax = parseInt($(this).val(), 10) || 4;
@@ -1185,7 +1208,7 @@ async function getTotalImageTokenEstimate() {
     let imageCount = 0;
 
     // Character avatar
-    if (s.injectTarget === 'character' || s.injectTarget === 'both') {
+    if (s.injectChar) {
         const url = getCharacterAvatarUrl();
         if (url) {
             const b64 = await urlToBase64(url);
@@ -1199,7 +1222,7 @@ async function getTotalImageTokenEstimate() {
     }
 
     // Persona avatar
-    if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
+    if (s.injectPersona) {
         const url = getPersonaAvatarUrl();
         if (url) {
             const b64 = await urlToBase64(url);
@@ -1543,7 +1566,7 @@ async function onPromptReady(eventData) {
 
     // Inject character avatar — into the system message containing the raw personality text
     // Skip entirely in group chats (no character context); persona + lorebook still work.
-    if ((s.injectTarget === 'character' || s.injectTarget === 'both') && !isGroupChat()) {
+    if (s.injectChar && !isGroupChat()) {
         let charTarget = msg;
         const url = getCharacterAvatarUrl();
         if (url) {
@@ -1582,7 +1605,7 @@ async function onPromptReady(eventData) {
         if (s.charExtraImagesEnabled) {
             await injectCharGalleryImages(charTarget, quality, s.charExtraImagesMax);
         }
-    } else if ((s.injectTarget === 'character' || s.injectTarget === 'both') && isGroupChat()) {
+    } else if (s.injectChar && isGroupChat()) {
         warnOnce('group-chat', 'Character avatar and gallery injection skipped — not available in group chats. Persona and lorebook injection still active.');
     }
 
@@ -1592,7 +1615,7 @@ async function onPromptReady(eventData) {
     }
 
     // Inject persona avatar — into the system message containing the persona description text
-    if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
+    if (s.injectPersona) {
         let personaTarget = msg;
         const url = getPersonaAvatarUrl();
         if (url) {
@@ -1716,7 +1739,8 @@ async function ppStatusCallback() {
     const row = (k, v) => `<tr><td style="padding:4px 12px 4px 0;white-space:nowrap;color:var(--text-color-dim);">${k}</td><td style="padding:4px 0;">${v}</td></tr>`;
 
     lines.push(row('Enabled', s.enabled ? '✓ <span style="color:var(--success-color);">yes</span>' : '✗ <span style="color:var(--error-color);">no</span>'));
-    lines.push(row('Inject target', s.injectTarget === 'none' ? 'none' : s.injectTarget));
+    lines.push(row('Character avatar', s.injectChar ? '✓ <span style="color:var(--success-color);">enabled</span>' : '✗ disabled'));
+    lines.push(row('Persona avatar', s.injectPersona ? '✓ <span style="color:var(--success-color);">enabled</span>' : '✗ disabled'));
 
     // Persona extras
     if (user_avatar) {
@@ -1769,10 +1793,10 @@ async function ppImagesCallback() {
     const item = (label, value) => `<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">${label}:</span> ${escapeHtml(String(value))}</p>`;
 
     // Character avatar
-    if ((s.injectTarget === 'character' || s.injectTarget === 'both') && !isGroupChat()) {
+    if (s.injectChar && !isGroupChat()) {
         const url = getCharacterAvatarUrl();
         lines.push(item('Character avatar', url ? '✓ available' : '✗ not set'));
-    } else if (isGroupChat() && (s.injectTarget === 'character' || s.injectTarget === 'both')) {
+    } else if (isGroupChat() && s.injectChar) {
         lines.push(item('Character avatar', 'skipped — group chat'));
     }
 
@@ -1792,7 +1816,7 @@ async function ppImagesCallback() {
     }
 
     // Persona avatar
-    if (s.injectTarget === 'persona' || s.injectTarget === 'both') {
+    if (s.injectPersona) {
         const url = getPersonaAvatarUrl();
         lines.push(item('Persona avatar', url ? '✓ available' : '✗ not set'));
     }

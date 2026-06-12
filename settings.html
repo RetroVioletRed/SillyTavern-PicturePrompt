@@ -5,94 +5,95 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <div class="flex-container marginTopBot5">
-                <label class="checkbox_label" for="picture_prompt_enabled" title="Inject images into the prompt for multimodal LLMs">
+            <!-- Master toggle -->
+            <div class="pp-master-group">
+            <div class="pp-setting-row">
+                <label class="checkbox_label" for="picture_prompt_enabled" title="Master toggle - disables all image injection when off">
                     <input id="picture_prompt_enabled" type="checkbox">
                     Enable Picture Prompt
                 </label>
             </div>
+            <hr>
+            </div>
 
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>Avatar Injection</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            <div class="pp-settings-group">
+                <!-- Character Avatar -->
+                <div class="pp-setting-row">
+                    <label class="checkbox_label" for="picture_prompt_inject_char" title="Inject the character's avatar image into the prompt">
+                        <input id="picture_prompt_inject_char" type="checkbox">
+                        Inject Character Avatar
+                    </label>
                 </div>
-                <div class="inline-drawer-content">
-                    <div class="flex-container alignItemsCenter marginTopBot5">
-                        <span>Inject:</span>
-                        <select id="picture_prompt_target" class="text_pole widthNatural">
-                            <option value="none">None</option>
-                            <option value="character">Character avatar</option>
-                            <option value="persona">User persona avatar</option>
-                            <option value="both">Both</option>
-                        </select>
-                    </div>
+                <div class="pp-sub-row" id="pp_char_label_row">
+                    <span class="pp-sub-label">Label:</span>
+                    <input id="picture_prompt_label_char" class="text_pole" type="text"
+                           placeholder="This is how you look:"
+                           title="This text will be injected into the prompt before the character's avatar.">
+                </div>
 
-                    <div class="flex-container alignItemsCenter marginTopBot5">
-                        <span>Label for character avatar:</span>
-                        <input id="picture_prompt_label_char" class="text_pole" type="text" placeholder="e.g. This is how you look:">
-                    </div>
-                    <div class="flex-container alignItemsCenter marginTopBot5">
-                        <span>Label for persona avatar:</span>
-                        <input id="picture_prompt_label_user" class="text_pole" type="text" placeholder="e.g. This is how {{user}} looks:">
-                    </div>
+                <!-- Persona Avatar -->
+                <div class="pp-setting-row">
+                    <label class="checkbox_label" for="picture_prompt_inject_persona" title="Inject your persona avatar image into the prompt">
+                        <input id="picture_prompt_inject_persona" type="checkbox">
+                        Inject Persona Avatar
+                    </label>
+                </div>
+                <div class="pp-sub-row" id="pp_persona_label_row">
+                    <span class="pp-sub-label">Label:</span>
+                    <input id="picture_prompt_label_user" class="text_pole" type="text"
+                           placeholder="This is how {{user}} looks:"
+                           title="This text will be injected into the prompt before your persona avatar.">
                 </div>
             </div>
+            <hr>
 
-            <!-- Extra Images Drawer -->
+            <div class="pp-settings-group">
+                <!-- Persona Extra Images -->
+                <div class="pp-setting-row">
+                    <label class="checkbox_label" for="picture_prompt_extra_images_enabled" title="Inject uploaded extra images attached to your persona">
+                        <input id="picture_prompt_extra_images_enabled" type="checkbox">
+                        Inject persona extra images
+                    </label>
+                    <span class="pp-counter" id="pp_extra_max_row">
+                        <label for="picture_prompt_extra_images_max">Max</label>
+                        <input id="picture_prompt_extra_images_max" class="text_pole" type="number" min="0" max="20" value="8" title="Maximum number of extra images to inject per request">
+                    </span>
+                </div>
 
-	    <hr style="margin: 0.75rem 0; opacity: 0.3;">
+                <!-- Gallery Images -->
+                <div class="pp-setting-row">
+                    <label class="checkbox_label" for="picture_prompt_char_extra_enabled" title="Pin images via Gallery → 𖡡 Inject mode.">
+                        <input id="picture_prompt_char_extra_enabled" type="checkbox">
+                        Inject gallery images
+                    </label>
+                    <span class="pp-counter" id="pp_gallery_max_row">
+                        <label for="picture_prompt_char_extra_max">Max</label>
+                        <input id="picture_prompt_char_extra_max" class="text_pole" type="number" min="0" max="20" value="8" title="Maximum number of gallery images to inject per request">
+                    </span>
+                </div>
 
-            <div class="flex-container marginTopBot5">
-                <label class="checkbox_label" title="Automatically inject extra images into prompts">
-                    <input id="picture_prompt_extra_images_enabled" type="checkbox">
-                    Inject persona extra images
-                </label>
+                <!-- Lorebook Images -->
+                <div class="pp-setting-row">
+                    <label class="checkbox_label" for="picture_prompt_lorebook_enabled" title="Inject images from triggered lorebook / world info entries">
+                        <input id="picture_prompt_lorebook_enabled" type="checkbox">
+                        Inject lorebook entry images
+                    </label>
+                    <span class="pp-counter" id="pp_lorebook_max_row">
+                        <label for="picture_prompt_lorebook_max">Max</label>
+                        <input id="picture_prompt_lorebook_max" class="text_pole" type="number" min="0" max="20" value="4" title="Maximum number of lorebook images to inject per request">
+                    </span>
+                </div>
             </div>
+            <hr>
 
-            <div class="flex-container alignItemsCenter marginTopBot5">
-                <span>Max images to inject:</span>
-                <input id="picture_prompt_extra_images_max" class="text_pole" style="width:4em" type="number" min="0" max="20" value="8">
+            <!-- Estimation -->
+            <div class="pp-estimate">
+                <div class="flex-container alignItemsCenter">
+                    <span class="pp-estimate-header">Estimated image tokens:</span>
+                    <span id="picture_prompt_token_estimate" class="pp-token-count">--</span>
+                </div>
+                <div class="pp-breakdown" id="picture_prompt_token_breakdown"></div>
             </div>
-
-            <div class="flex-container marginTopBot5">
-                <label class="checkbox_label" title="Inject pinned gallery images for the current character">
-                    <input id="picture_prompt_char_extra_enabled" type="checkbox">
-                    Inject gallery images
-                </label>
-            </div>
-
-            <div class="flex-container alignItemsCenter marginTopBot5" style="margin-bottom: 0.5rem;">
-                <span>Max gallery images to inject:</span>
-                <input id="picture_prompt_char_extra_max" class="text_pole" style="width:4em" type="number" min="0" max="20" value="8">
-            </div>
-            <div style="font-size: 0.85em; color: var(--text-color-dim);">
-                Pin images to inject via the <b>Gallery</b> &rarr; <b>𖡡</b>  Inject mode button.
-            </div>
-
-            <hr style="margin: 0.75rem 0; opacity: 0.3;">
-
-            <div class="flex-container marginTopBot5">
-                <label class="checkbox_label" title="Inject images from triggered lorebook entries into vision model prompts">
-                    <input id="picture_prompt_lorebook_enabled" type="checkbox">
-                    Inject lorebook entry images
-                </label>
-            </div>
-
-            <div class="flex-container alignItemsCenter marginTopBot5">
-                <span>Max lorebook images to inject:</span>
-                <input id="picture_prompt_lorebook_max" class="text_pole" style="width:4em" type="number" min="0" max="20" value="4">
-            </div>
-            <div style="font-size: 0.85em; color: var(--text-color-dim);">
-                Inject images from triggered world info entries.
-            </div>
-
-            <hr style="margin: 0.75rem 0; opacity: 0.3;">
-            <div class="flex-container alignItemsCenter marginTopBot5">
-                <span>Estimated image tokens:</span>
-                <span id="picture_prompt_token_estimate" style="margin-left: 0.5em; font-weight: bold; color: var(--text-color);">--</span>
-            </div>
-            <div style="font-size: 0.75em; color: var(--text-color-dim);" id="picture_prompt_token_breakdown"></div>
         </div>
     </div>
 </div>
