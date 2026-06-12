@@ -375,6 +375,42 @@ function setMetaForPersona(avatarId, list) {
     context.saveSettingsDebounced();
 }
 
+/**
+ * Scan all persona metadata for orphaned entries whose IndexedDB blobs
+ * no longer exist, and prune them. Runs once per session on activate().
+ */
+async function pruneOrphanedPersonaImages() {
+    const context = getContext();
+    const all = context.extensionSettings[moduleName]?.personaExtraImages;
+    if (!all) return;
+
+    let changed = false;
+    for (const [avatarId, metaList] of Object.entries(all)) {
+        if (!Array.isArray(metaList) || !metaList.length) continue;
+        const keys = metaList.map(m => `${avatarId}::${m.filename}`);
+        let records;
+        try {
+            records = await dbGetAll(keys);
+        } catch {
+            continue;
+        }
+        const clean = [];
+        for (let i = 0; i < metaList.length; i++) {
+            if (records[i]?.blob) {
+                clean.push(metaList[i]);
+            }
+        }
+        if (clean.length !== metaList.length) {
+            all[avatarId] = clean;
+            changed = true;
+            console.debug(`[Picture Prompt] Pruned ${metaList.length - clean.length} orphan(s) from persona "${avatarId}"`);
+        }
+    }
+    if (changed) {
+        context.saveSettingsDebounced();
+    }
+}
+
 // ── Character Gallery (via built-in Gallery) ─────────────────
 
 let _pp_injectModeActive = false;
@@ -1860,15 +1896,14 @@ async function ppImagesCallback() {
 
     // Persona extras
     if (s.extraImagesEnabled && user_avatar) {
-        const meta = getMetaForPersona(user_avatar);
-        const enabled = meta.filter(m => m.enabled !== false);
+        const extras = await getExtraImagesForInjection(user_avatar);
         const qLabel = s.qualityExtraImages === 'global' ? '' : ` · ${s.qualityExtraImages}`;
-        if (enabled.length) {
+        if (extras.length) {
             const max = s.maxExtraImages || 8;
-            const list = enabled.slice(0, max).map(m => m.label || m.filename).join(', ');
-            lines.push(item(`Persona extras (${Math.min(enabled.length, max)} of ${enabled.length} enabled, max ${max})${qLabel}`, list));
+            const list = extras.slice(0, max).map(m => m.label || m.filename).join(', ');
+            lines.push(item(`Persona extras (${Math.min(extras.length, max)} of ${extras.length} available, max ${max})${qLabel}`, list));
         } else {
-            lines.push(item('Persona extras', 'none enabled'));
+            lines.push(item('Persona extras', 'none available'));
         }
     }
 
@@ -1920,6 +1955,7 @@ async function ppCacheCallback() {
 
 export async function activate() {
     getSettings();
+    await pruneOrphanedPersonaImages();
     await addSettingsUI();
     eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, onPromptReady);
     eventSource.on(event_types.PERSONA_CHANGED, onPersonaChanged);
