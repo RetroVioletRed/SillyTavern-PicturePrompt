@@ -95,6 +95,26 @@ export async function injectLorebookImages(chat, quality, s) {
 
     console.debug(`[PP-Lorebook] Found ${systemMessages.length} system message(s)`);
 
+    // ── Identify Author's Note and Example Messages ─────────────────
+    // ST places Author's Note (positions 2,3) and Example Messages (5,6)
+    // as the last system messages, after world info and character data.
+    // The author's note is wrapped with "[Author's note:" — scan for it.
+    let anMsg = null;
+    let emMsg = null;
+    for (let i = systemMessages.length - 1; i >= 2; i--) {
+        const content = systemMessages[i].message.content;
+        const text = typeof content === 'string' ? content
+            : Array.isArray(content) ? content.filter(b => b.type === 'text').map(b => b.text).join('') : '';
+        if (text.includes("[Author's note:")) {
+            anMsg = systemMessages[i].message;
+            if (i + 1 < systemMessages.length) {
+                emMsg = systemMessages[i + 1].message;
+            }
+            break;
+        }
+    }
+    console.debug(`[PP-Lorebook] Author's Note msg: ${anMsg ? 'found' : 'not found'}, Example Msgs: ${emMsg ? 'found' : 'not found'}`);
+
     // ── Identify which system message holds worldInfoBefore / worldInfoAfter ─
     // In preparePromptsForChatCompletion (openai.js:1367-1375), system messages
     // are added in order: worldInfoBefore, worldInfoAfter, charDescription,
@@ -268,12 +288,19 @@ export async function injectLorebookImages(chat, quality, s) {
         await injectIntoSystemMsg(wiBeforeMsg, afterEntries);
     }
 
-    // ── Inject remaining positions into the first system message ─
+    // ── Inject remaining positions into their correct system messages ─
     for (const [pos, entryList] of byPosition) {
         if (pos === 0 || pos === 1) continue; // already handled
         if (injectedCount >= maxTotal) break;
-        console.debug(`[PP-Lorebook] Injecting ${entryList.length} position=${pos} entries into system message`);
-        await injectIntoSystemMsg(wiBeforeMsg, entryList);
+
+        const target = (pos === 2 || pos === 3) ? anMsg
+            : (pos === 5 || pos === 6) ? emMsg
+            : wiBeforeMsg;
+        if (!target) continue;
+
+        const label = pos === 2 ? 'ANTop' : pos === 3 ? 'ANBottom' : pos === 5 ? 'EMTop' : pos === 6 ? 'EMBottom' : `pos=${pos}`;
+        console.debug(`[PP-Lorebook] Injecting ${entryList.length} ${label} entries into ${target === anMsg ? "Author's Note" : target === emMsg ? 'Example Messages' : 'worldInfoBefore'} system message`);
+        await injectIntoSystemMsg(target, entryList);
     }
 
     console.debug(`[PP-Lorebook] Injection complete — injected ${injectedCount} image(s) total`);
