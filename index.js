@@ -210,6 +210,7 @@ const defaultSettings = {
     qualityExtraImages: 'global',
     qualityGalleryImages: 'global',
     qualityLorebookImages: 'global',
+    injectionIndicatorEnabled: true,
 };
 
 function migrateOldSettings() {
@@ -271,6 +272,7 @@ function applySettingsToUI() {
     $('#picture_prompt_quality_extra_images').val(s.qualityExtraImages ?? 'global');
     $('#picture_prompt_quality_char_extra').val(s.qualityGalleryImages ?? 'global');
     $('#picture_prompt_quality_lorebook').val(s.qualityLorebookImages ?? 'global');
+    $('#picture_prompt_injection_indicator').prop('checked', s.injectionIndicatorEnabled ?? true);
     refreshTokenEstimate();
 }
 
@@ -346,6 +348,10 @@ function registerSettingsListeners() {
     });
     $('#picture_prompt_quality_lorebook').on('change', function () {
         getSettings().qualityLorebookImages = String($(this).val());
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_injection_indicator').on('change', function () {
+        getSettings().injectionIndicatorEnabled = !!$(this).prop('checked');
         getContext().saveSettingsDebounced();
     });
 }
@@ -1802,6 +1808,7 @@ function _onSettingsUpdated() {
 
 function _onGenerationEnded() {
     if (!_ppInjectionStats || !_ppInjectionStats.imageCount) return;
+    if (!getSettings().injectionIndicatorEnabled) return;
     $('.pp-injection-indicator').remove();
     const s = _ppInjectionStats;
     const $indicator = $(`<div class="pp-injection-indicator">🖼 ${s.imageCount} image${s.imageCount !== 1 ? 's' : ''} · ~${s.total.toLocaleString()} tokens</div>`);
