@@ -210,6 +210,12 @@ const defaultSettings = {
     qualityExtraImages: 'global',
     qualityGalleryImages: 'global',
     qualityLorebookImages: 'global',
+    // Inject position per source: 'system' | 'user'
+    positionCharAvatar: 'system',
+    positionPersonaAvatar: 'system',
+    positionExtraImages: 'system',
+    positionGalleryImages: 'system',
+    positionLorebookImages: 'system',
     injectionIndicatorEnabled: true,
 };
 
@@ -272,6 +278,11 @@ function applySettingsToUI() {
     $('#picture_prompt_quality_extra_images').val(s.qualityExtraImages ?? 'global');
     $('#picture_prompt_quality_char_extra').val(s.qualityGalleryImages ?? 'global');
     $('#picture_prompt_quality_lorebook').val(s.qualityLorebookImages ?? 'global');
+    $('#picture_prompt_position_char_avatar').text(s.positionCharAvatar === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionCharAvatar === 'user');
+    $('#picture_prompt_position_persona_avatar').text(s.positionPersonaAvatar === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionPersonaAvatar === 'user');
+    $('#picture_prompt_position_extra_images').text(s.positionExtraImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionExtraImages === 'user');
+    $('#picture_prompt_position_char_extra').text(s.positionGalleryImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionGalleryImages === 'user');
+    $('#picture_prompt_position_lorebook').text(s.positionLorebookImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionLorebookImages === 'user');
     $('#picture_prompt_injection_indicator').prop('checked', s.injectionIndicatorEnabled ?? true);
     refreshTokenEstimate();
 }
@@ -352,6 +363,38 @@ function registerSettingsListeners() {
     });
     $('#picture_prompt_injection_indicator').on('change', function () {
         getSettings().injectionIndicatorEnabled = !!$(this).prop('checked');
+        getContext().saveSettingsDebounced();
+    });
+
+    // Position toggle buttons
+    $('#picture_prompt_position_char_avatar').on('click', function () {
+        const s = getSettings();
+        s.positionCharAvatar = s.positionCharAvatar === 'user' ? 'system' : 'user';
+        $(this).text(s.positionCharAvatar === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionCharAvatar === 'user');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_position_persona_avatar').on('click', function () {
+        const s = getSettings();
+        s.positionPersonaAvatar = s.positionPersonaAvatar === 'user' ? 'system' : 'user';
+        $(this).text(s.positionPersonaAvatar === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionPersonaAvatar === 'user');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_position_extra_images').on('click', function () {
+        const s = getSettings();
+        s.positionExtraImages = s.positionExtraImages === 'user' ? 'system' : 'user';
+        $(this).text(s.positionExtraImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionExtraImages === 'user');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_position_char_extra').on('click', function () {
+        const s = getSettings();
+        s.positionGalleryImages = s.positionGalleryImages === 'user' ? 'system' : 'user';
+        $(this).text(s.positionGalleryImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionGalleryImages === 'user');
+        getContext().saveSettingsDebounced();
+    });
+    $('#picture_prompt_position_lorebook').on('click', function () {
+        const s = getSettings();
+        s.positionLorebookImages = s.positionLorebookImages === 'user' ? 'system' : 'user';
+        $(this).text(s.positionLorebookImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionLorebookImages === 'user');
         getContext().saveSettingsDebounced();
     });
 }
@@ -1306,7 +1349,7 @@ async function getTotalImageTokenEstimate() {
                 const q = getSourceQuality(s.qualityCharAvatar);
                 total += await estimateImageTokens(b64, q);
                 imageCount++;
-                sources.push({ name: 'Char', quality: s.qualityCharAvatar });
+                sources.push({ name: 'Char', quality: s.qualityCharAvatar, position: s.positionCharAvatar || 'system' });
             }
         }
     }
@@ -1320,7 +1363,7 @@ async function getTotalImageTokenEstimate() {
                 const q = getSourceQuality(s.qualityPersonaAvatar);
                 total += await estimateImageTokens(b64, q);
                 imageCount++;
-                sources.push({ name: 'Persona', quality: s.qualityPersonaAvatar });
+                sources.push({ name: 'Persona', quality: s.qualityPersonaAvatar, position: s.positionPersonaAvatar || 'system' });
             }
         }
     }
@@ -1333,7 +1376,7 @@ async function getTotalImageTokenEstimate() {
             total += await estimateImageTokens(img.dataUrl, q);
             imageCount++;
         }
-        if (extras.length) sources.push({ name: 'Extras', quality: s.qualityExtraImages });
+        if (extras.length) sources.push({ name: 'Extras', quality: s.qualityExtraImages, position: s.positionExtraImages || 'system' });
     }
 
     // Character gallery images
@@ -1361,7 +1404,7 @@ async function getTotalImageTokenEstimate() {
                             galleryCount++;
                         }
                     }
-                    if (galleryCount) sources.push({ name: 'Gallery', quality: s.qualityGalleryImages });
+                    if (galleryCount) sources.push({ name: 'Gallery', quality: s.qualityGalleryImages, position: s.positionGalleryImages || 'system' });
                 }
             }
         }
@@ -1418,7 +1461,7 @@ async function getTotalImageTokenEstimate() {
                 } catch { /* skip individual token estimate failures */ }
             }
         }
-        if (lbInjected) sources.push({ name: 'Lorebook', quality: s.qualityLorebookImages });
+        if (lbInjected) sources.push({ name: 'Lorebook', quality: s.qualityLorebookImages, position: s.positionLorebookImages || 'system' });
     }
 
     return { total, imageCount, sources };
@@ -1480,7 +1523,8 @@ async function refreshTokenEstimate() {
             let detailParts = [`${est.imageCount} image${est.imageCount !== 1 ? 's' : ''} · ${contextLabel}`];
             for (const src of est.sources) {
                 const qLabel = src.quality === 'global' ? 'global' : src.quality;
-                detailParts.push(`${src.name}: ${qLabel}`);
+                const posSuffix = src.position === 'user' ? ' · user' : '';
+                detailParts.push(`${src.name}: ${qLabel}${posSuffix}`);
             }
             $detail2.text(detailParts.join(' · '));
         }
@@ -1589,6 +1633,18 @@ function getFirstTextBlock(msg) {
     return newBlock;
 }
 
+/**
+ * Find the last user message in the chat array.
+ * @param {Array} chat
+ * @returns {object|null}
+ */
+function getUserTarget(chat) {
+    for (let i = chat.length - 1; i >= 0; i--) {
+        if (chat[i].role === 'user') return chat[i];
+    }
+    return null;
+}
+
 async function onPromptReady(eventData) {
     const s = getSettings();
     _ppInjectionStats = null;
@@ -1642,35 +1698,40 @@ async function onPromptReady(eventData) {
         targetMsg.content.push({ type: 'image_url', image_url: { url: base64Data, detail: quality } });
     }
 
-    // Inject character avatar — into the system message containing the raw personality text
+    // Inject character avatar — into system or user message based on position setting
     // Skip entirely in group chats (no character context); persona + lorebook still work.
     if (s.injectChar && !isGroupChat()) {
-        let charTarget = msg;
+        const charPosition = s.positionCharAvatar || 'system';
+        let charTarget = charPosition === 'user' ? getUserTarget(chat) : msg;
         const url = getCharacterAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelChar);
-                // Read raw character personality from character data, then find the system
-                // message that contains it (works regardless of prompt format/preset).
-                // Falls back to character description if personality is empty.
-                let charSearchText = '';
-                try {
-                    charSearchText = (characters?.[chId]?.data?.personality || '').trim();
-                    if (!charSearchText) {
-                        charSearchText = (characters?.[chId]?.data?.description || '').trim();
+                const charQ = getSourceQuality(s.qualityCharAvatar);
+                if (charPosition === 'user') {
+                    if (charTarget && ensureContentBlocks(charTarget)) {
+                        injectImageToMessage(charTarget, base64Data, label, charQ);
                     }
-                } catch {}
-                // Resolve template variables
-                charSearchText = charSearchText.replace(/{{user}}/gi, userName).replace(/{{char}}/gi, charName);
-                const charMsg = charSearchText
-                    ? chat.find(m => m.role === 'system' && getMessageText(m).includes(charSearchText))
-                    : null;
-                if (charMsg && ensureContentBlocks(charMsg)) {
-                    injectImageToMessage(charMsg, base64Data, label, getSourceQuality(s.qualityCharAvatar));
-                    charTarget = charMsg;
                 } else {
-                    injectImageToMessage(msg, base64Data, label, getSourceQuality(s.qualityCharAvatar));
+                    // Find the system message containing the raw personality text
+                    let charSearchText = '';
+                    try {
+                        charSearchText = (characters?.[chId]?.data?.personality || '').trim();
+                        if (!charSearchText) {
+                            charSearchText = (characters?.[chId]?.data?.description || '').trim();
+                        }
+                    } catch {}
+                    charSearchText = charSearchText.replace(/{{user}}/gi, userName).replace(/{{char}}/gi, charName);
+                    const charMsg = charSearchText
+                        ? chat.find(m => m.role === 'system' && getMessageText(m).includes(charSearchText))
+                        : null;
+                    if (charMsg && ensureContentBlocks(charMsg)) {
+                        injectImageToMessage(charMsg, base64Data, label, charQ);
+                        charTarget = charMsg;
+                    } else {
+                        injectImageToMessage(msg, base64Data, label, charQ);
+                    }
                 }
             } else {
                 warnOnce('char-fetch', 'Failed to load character avatar image');
@@ -1680,7 +1741,7 @@ async function onPromptReady(eventData) {
         }
 
         // Character gallery extras — land right after character avatar in the same message
-        if (s.charExtraImagesEnabled) {
+        if (s.charExtraImagesEnabled && charTarget) {
             await injectCharGalleryImages(charTarget, getSourceQuality(s.qualityGalleryImages), s.charExtraImagesMax);
         }
     } else if (s.injectChar && isGroupChat()) {
@@ -1689,26 +1750,36 @@ async function onPromptReady(eventData) {
 
     // Lorebook images — inject into system messages alongside world info text
     if (s.lorebookImagesEnabled) {
-        await injectLorebookImages(chat, getSourceQuality(s.qualityLorebookImages), lbSettings);
+        await injectLorebookImages(chat, getSourceQuality(s.qualityLorebookImages), {
+            ...lbSettings,
+            positionLorebookImages: s.positionLorebookImages || 'system',
+        });
     }
 
-    // Inject persona avatar — into the system message containing the persona description text
+    // Inject persona avatar — into system or user message based on position setting
     if (s.injectPersona) {
-        let personaTarget = msg;
+        const personaPosition = s.positionPersonaAvatar || 'system';
+        let personaTarget = personaPosition === 'user' ? getUserTarget(chat) : msg;
         const url = getPersonaAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
             if (base64Data) {
                 const label = resolveLabel(s.labelUser);
-                // resolvedPersonaDesc is already resolved above
-                const personaMsg = resolvedPersonaDesc
-                    ? chat.find(m => m.role === 'system' && getMessageText(m).includes(resolvedPersonaDesc))
-                    : null;
-                if (personaMsg && ensureContentBlocks(personaMsg)) {
-                    injectImageToMessage(personaMsg, base64Data, label, getSourceQuality(s.qualityPersonaAvatar));
-                    personaTarget = personaMsg;
+                const personaQ = getSourceQuality(s.qualityPersonaAvatar);
+                if (personaPosition === 'user') {
+                    if (personaTarget && ensureContentBlocks(personaTarget)) {
+                        injectImageToMessage(personaTarget, base64Data, label, personaQ);
+                    }
                 } else {
-                    injectImageToMessage(msg, base64Data, label, getSourceQuality(s.qualityPersonaAvatar));
+                    const personaMsg = resolvedPersonaDesc
+                        ? chat.find(m => m.role === 'system' && getMessageText(m).includes(resolvedPersonaDesc))
+                        : null;
+                    if (personaMsg && ensureContentBlocks(personaMsg)) {
+                        injectImageToMessage(personaMsg, base64Data, label, personaQ);
+                        personaTarget = personaMsg;
+                    } else {
+                        injectImageToMessage(msg, base64Data, label, personaQ);
+                    }
                 }
             } else {
                 warnOnce('persona-fetch', 'Failed to load persona avatar image');
@@ -1718,7 +1789,7 @@ async function onPromptReady(eventData) {
         }
 
         // Persona extra images — land right after persona avatar in the same message
-        if (s.extraImagesEnabled && user_avatar) {
+        if (s.extraImagesEnabled && user_avatar && personaTarget) {
             const extras = await getExtraImagesForInjection(user_avatar);
             for (const img of extras) {
                 const perImageLabel = (img.label || '').trim();
@@ -1830,8 +1901,10 @@ async function ppStatusCallback() {
     const row = (k, v) => `<tr><td style="padding:4px 12px 4px 0;white-space:nowrap;color:var(--text-color-dim);">${k}</td><td style="padding:4px 0;">${v}</td></tr>`;
 
     lines.push(row('Enabled', s.enabled ? '✓ <span style="color:var(--success-color);">yes</span>' : '✗ <span style="color:var(--error-color);">no</span>'));
-    lines.push(row('Character avatar', s.injectChar ? '✓ <span style="color:var(--success-color);">enabled</span>' : '✗ disabled'));
-    lines.push(row('Persona avatar', s.injectPersona ? '✓ <span style="color:var(--success-color);">enabled</span>' : '✗ disabled'));
+    const charPos = s.positionCharAvatar === 'user' ? '<span style="color:var(--text-color-dim);"> → user</span>' : '';
+    lines.push(row('Character avatar', (s.injectChar ? '✓ <span style="color:var(--success-color);">enabled</span>' : '✗ disabled') + charPos));
+    const personaPos = s.positionPersonaAvatar === 'user' ? '<span style="color:var(--text-color-dim);"> → user</span>' : '';
+    lines.push(row('Persona avatar', (s.injectPersona ? '✓ <span style="color:var(--success-color);">enabled</span>' : '✗ disabled') + personaPos));
 
     // Persona extras
     if (user_avatar) {
@@ -1886,8 +1959,9 @@ async function ppImagesCallback() {
     // Character avatar
     if (s.injectChar && !isGroupChat()) {
         const url = getCharacterAvatarUrl();
+        const posLabel = s.positionCharAvatar === 'user' ? ' → user' : '';
         const qLabel = s.qualityCharAvatar === 'global' ? '' : ` · ${s.qualityCharAvatar}`;
-        lines.push(item('Character avatar', (url ? '✓ available' : '✗ not set') + qLabel));
+        lines.push(item('Character avatar', (url ? '✓ available' : '✗ not set') + qLabel + posLabel));
     } else if (isGroupChat() && s.injectChar) {
         lines.push(item('Character avatar', 'skipped — group chat'));
     }
@@ -1899,10 +1973,11 @@ async function ppImagesCallback() {
         const meta = getCharGalleryMeta(avatarId);
         const pinned = Object.entries(meta).filter(([, v]) => v.enabled);
         const max = s.charExtraImagesMax || 8;
+        const galleryPosLabel = s.positionGalleryImages === 'user' ? ' → user' : '';
         const qLabel = s.qualityGalleryImages === 'global' ? '' : ` · ${s.qualityGalleryImages}`;
         if (pinned.length) {
             const list = pinned.slice(0, max).map(([fn, v]) => v.label || fn).join(', ');
-            lines.push(item(`Gallery pins (${Math.min(pinned.length, max)} of ${pinned.length} selected, max ${max})${qLabel}`, list));
+            lines.push(item(`Gallery pins (${Math.min(pinned.length, max)} of ${pinned.length} selected, max ${max})${qLabel}${galleryPosLabel}`, list));
         } else {
             lines.push(item('Gallery pins', 'none selected'));
         }
@@ -1912,17 +1987,19 @@ async function ppImagesCallback() {
     if (s.injectPersona) {
         const url = getPersonaAvatarUrl();
         const qLabel = s.qualityPersonaAvatar === 'global' ? '' : ` · ${s.qualityPersonaAvatar}`;
-        lines.push(item('Persona avatar', (url ? '✓ available' : '✗ not set') + qLabel));
+        const personaPosLabel = s.positionPersonaAvatar === 'user' ? ' → user' : '';
+        lines.push(item('Persona avatar', (url ? '✓ available' : '✗ not set') + qLabel + personaPosLabel));
     }
 
     // Persona extras
     if (s.extraImagesEnabled && user_avatar) {
         const extras = await getExtraImagesForInjection(user_avatar);
+        const extraPosLabel = s.positionExtraImages === 'user' ? ' → user' : '';
         const qLabel = s.qualityExtraImages === 'global' ? '' : ` · ${s.qualityExtraImages}`;
         if (extras.length) {
             const max = s.maxExtraImages || 8;
             const list = extras.slice(0, max).map(m => m.label || m.filename).join(', ');
-            lines.push(item(`Persona extras (${Math.min(extras.length, max)} of ${extras.length} available, max ${max})${qLabel}`, list));
+            lines.push(item(`Persona extras (${Math.min(extras.length, max)} of ${extras.length} available, max ${max})${qLabel}${extraPosLabel}`, list));
         } else {
             lines.push(item('Persona extras', 'none available'));
         }
@@ -1931,6 +2008,7 @@ async function ppImagesCallback() {
     // Lorebook
     if (s.lorebookImagesEnabled) {
         const entries = getCachedActiveEntries();
+        const lbPosLabel = s.positionLorebookImages === 'user' ? ' → user' : '';
         const lbQ = s.qualityLorebookImages === 'global' ? '' : ` · ${s.qualityLorebookImages}`;
         if (entries.size) {
             const max = lbSettings.lorebookImagesMax || 4;
@@ -1951,7 +2029,7 @@ async function ppImagesCallback() {
                 }
             }
             if (entryLines.length) {
-                lines.push(`<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">Lorebook (${entries.size} active, max ${max})${lbQ}:</span></p><ul style="margin:4px 0;">${entryLines.join('')}</ul>`);
+                lines.push(`<p style="margin:4px 0;"><span style="color:var(--text-color-dim);">Lorebook (${entries.size} active, max ${max})${lbQ}${lbPosLabel}:</span></p><ul style="margin:4px 0;">${entryLines.join('')}</ul>`);
             } else {
                 lines.push(item('Lorebook', `${entries.size} active entries, no enabled images`));
             }

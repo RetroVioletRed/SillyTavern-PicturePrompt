@@ -95,6 +95,85 @@ export async function injectLorebookImages(chat, quality, s) {
 
     console.debug(`[PP-Lorebook] Found ${systemMessages.length} system message(s)`);
 
+    // ── User-position shortcut ─────────────────
+    // When positionLorebookImages is 'user', bypass all system-message
+    // routing and inject all enabled lorebook images into the last user message.
+    if (s.positionLorebookImages === 'user') {
+        console.debug('[PP-Lorebook] User-position mode — injecting all lorebook images into last user message');
+
+        function findLastUserMessage(chat) {
+            for (let i = chat.length - 1; i >= 0; i--) {
+                if (chat[i].role === 'user') return chat[i];
+            }
+            return null;
+        }
+
+        const userMsg = findLastUserMessage(chat);
+        if (!userMsg) {
+            console.debug('[PP-Lorebook] No user message found — skipping injection');
+            return;
+        }
+        if (typeof userMsg.content === 'string') {
+            userMsg.content = [{ type: 'text', text: userMsg.content }];
+        }
+        if (!Array.isArray(userMsg.content)) {
+            console.debug('[PP-Lorebook] Cannot inject — user message content is not an array');
+            return;
+        }
+
+        let injectedCount = 0;
+        for (const [key, entry] of entries) {
+            if (injectedCount >= maxTotal) break;
+            const wName = entry.world || '';
+            const uid = String(entry.uid);
+            const images = getLorebookImages(wName, uid);
+            const enabledImages = images.filter(img => img.enabled !== false);
+            if (!enabledImages.length) continue;
+
+            const remaining = maxTotal - injectedCount;
+            const toInject = enabledImages.slice(0, remaining);
+
+            const dataUrlByFilename = new Map();
+            const uncachedFilenames = [];
+            for (const img of toInject) {
+                const cacheKey = 'lb::' + wName + '::' + uid + '::' + img.filename;
+                const hit = getCached(cacheKey);
+                if (hit !== undefined) {
+                    dataUrlByFilename.set(img.filename, hit);
+                } else {
+                    uncachedFilenames.push(img.filename);
+                }
+            }
+
+            if (uncachedFilenames.length > 0) {
+                try {
+                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
+                    for (const [filename, dataUrl] of fresh) {
+                        const cacheKey = 'lb::' + wName + '::' + uid + '::' + filename;
+                        setCached(cacheKey, dataUrl);
+                        dataUrlByFilename.set(filename, dataUrl);
+                    }
+                } catch (err) {
+                    console.debug(`[PP-Lorebook] Batch fetch failed for entry ${key}:`, err);
+                }
+            }
+
+            for (const img of toInject) {
+                const base64Data = dataUrlByFilename.get(img.filename);
+                if (!base64Data) continue;
+                const label = (img.label || '').trim();
+                userMsg.content.push({ type: 'text', text: label ? '\n' + label : '\n' });
+                userMsg.content.push({
+                    type: 'image_url',
+                    image_url: { url: base64Data, detail: quality },
+                });
+                injectedCount++;
+            }
+        }
+        console.debug(`[PP-Lorebook] User-position mode — injected ${injectedCount} image(s)`);
+        return;
+    }
+
     // ── Identify Author's Note and Example Messages ─────────────────
     // ST places Author's Note (positions 2,3) and Example Messages (5,6)
     // as the last system messages, after world info and character data.

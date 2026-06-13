@@ -419,3 +419,32 @@
     line-height: 1.4;
     user-select: none;
 }
+
+/* ── Position toggle button (S/U) ── */
+
+.pp-position-btn {
+    font-size: 0.78em;
+    padding: 1px 5px;
+    height: auto;
+    min-width: 20px;
+    cursor: pointer;
+    font-family: monospace;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--text-color-dim);
+    line-height: 1.3;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.pp-position-btn:hover {
+    border-color: var(--text-color);
+    color: var(--text-color);
+}
+
+.pp-position-btn.pp-position-user {
+    color: var(--text-color-accent, #7baaf7);
+    border-color: var(--text-color-accent, #7baaf7);
+}
