@@ -318,7 +318,8 @@ function registerSettingsListeners() {
         $('#pp_extras_controls').toggle(this.checked);
     });
     $('#picture_prompt_extra_images_max').on('input', function () {
-        getSettings().maxExtraImages = parseInt($(this).val(), 10) || 8;
+        const n = parseInt($(this).val(), 10);
+        getSettings().maxExtraImages = Number.isFinite(n) ? Math.max(0, n) : 8;
         getContext().saveSettingsDebounced();
     });
     $('#picture_prompt_char_extra_enabled').on('change', function () {
@@ -327,7 +328,8 @@ function registerSettingsListeners() {
         $('#pp_gallery_controls').toggle(this.checked);
     });
     $('#picture_prompt_char_extra_max').on('input', function () {
-        getSettings().charExtraImagesMax = parseInt($(this).val(), 10) || 8;
+        const n = parseInt($(this).val(), 10);
+        getSettings().charExtraImagesMax = Number.isFinite(n) ? Math.max(0, n) : 8;
         getContext().saveSettingsDebounced();
     });
     $('#picture_prompt_lorebook_enabled').on('change', function () {
@@ -336,7 +338,8 @@ function registerSettingsListeners() {
         $('#pp_lorebook_controls').toggle(this.checked);
     });
     $('#picture_prompt_lorebook_max').on('input', function () {
-        getSettings().lorebookImagesMax = parseInt($(this).val(), 10) || 4;
+        const n = parseInt($(this).val(), 10);
+        getSettings().lorebookImagesMax = Number.isFinite(n) ? Math.max(0, n) : 4;
         getContext().saveSettingsDebounced();
     });
 
@@ -1099,14 +1102,9 @@ function renderImageGrid(images, gridSelector = '#pp_extra_images_grid', avatarI
         return;
     }
 
-    const settings = getSettings();
-    const displayImages = settings.maxExtraImages > 0
-        ? images.slice(0, settings.maxExtraImages)
-        : images;
-
     const targetAvatarId = avatarId || ($('#pp_extra_images_section').data('avatar-id') || '');
 
-    for (const img of displayImages) {
+    for (const img of images) {
         const $card = $(`
             <div class="picture-prompt-image-card" data-filename="${escapeHtml(img.filename)}">
                 <div class="card-image-wrap">
@@ -1219,7 +1217,7 @@ function cancelLabelEdit($input) {
 
 async function uploadExtraImages(avatarId, files) {
     const settings = getSettings();
-    const maxImages = settings.maxExtraImages || 8;
+    const maxImages = Number.isFinite(settings.maxExtraImages) ? Math.max(0, settings.maxExtraImages) : 8;
 
     try {
         // Count existing images from metadata
@@ -1371,12 +1369,14 @@ async function getTotalImageTokenEstimate() {
     // Persona extra images
     if (s.extraImagesEnabled && user_avatar) {
         const extras = await getExtraImagesForInjection(user_avatar);
+        const maxCount = Number.isFinite(s.maxExtraImages) ? Math.max(0, s.maxExtraImages) : 8;
+        const capped = extras.slice(0, maxCount);
         const q = getSourceQuality(s.qualityExtraImages);
-        for (const img of extras) {
+        for (const img of capped) {
             total += await estimateImageTokens(img.dataUrl, q);
             imageCount++;
         }
-        if (extras.length) sources.push({ name: 'Extras', quality: s.qualityExtraImages, position: s.positionExtraImages || 'system' });
+        if (capped.length) sources.push({ name: 'Extras', quality: s.qualityExtraImages, position: s.positionExtraImages || 'system' });
     }
 
     // Character gallery images
@@ -1388,7 +1388,7 @@ async function getTotalImageTokenEstimate() {
             const enabledFilenames = Object.entries(meta)
                 .filter(([, v]) => v.enabled)
                 .map(([k]) => k);
-            const maxCount = s.charExtraImagesMax || 8;
+            const maxCount = Number.isFinite(s.charExtraImagesMax) ? Math.max(0, s.charExtraImagesMax) : 8;
             const toInject = enabledFilenames.slice(0, maxCount);
             if (toInject.length > 0) {
                 const folder = getCharGalleryFolder();
@@ -1415,7 +1415,7 @@ async function getTotalImageTokenEstimate() {
         const lbSettings = getLorebookSettings();
         const entries = getCachedActiveEntries();
         let lbInjected = 0;
-        const lbMax = lbSettings.lorebookImagesMax || 4;
+        const lbMax = Number.isFinite(lbSettings.lorebookImagesMax) ? Math.max(0, lbSettings.lorebookImagesMax) : 4;
         const q = getSourceQuality(s.qualityLorebookImages);
         for (const [, entry] of entries) {
             if (lbInjected >= lbMax) break;
@@ -1791,7 +1791,9 @@ async function onPromptReady(eventData) {
         // Persona extra images — land right after persona avatar in the same message
         if (s.extraImagesEnabled && user_avatar && personaTarget) {
             const extras = await getExtraImagesForInjection(user_avatar);
-            for (const img of extras) {
+            const maxCount = Number.isFinite(s.maxExtraImages) ? Math.max(0, s.maxExtraImages) : 8;
+            const capped = extras.slice(0, maxCount);
+            for (const img of capped) {
                 const perImageLabel = (img.label || '').trim();
                 if (perImageLabel) {
                     personaTarget.content.push({ type: 'text', text: '\n' + perImageLabel });
@@ -1827,7 +1829,7 @@ async function injectCharGalleryImages(msg, quality, maxCount) {
     const folder = getCharGalleryFolder();
     if (!folder) return;
 
-    const effectiveMax = maxCount || 8;
+    const effectiveMax = Number.isFinite(maxCount) ? Math.max(0, maxCount) : 8;
     const toInject = enabledFilenames.slice(0, effectiveMax);
 
     for (const filename of toInject) {
@@ -1972,7 +1974,7 @@ async function ppImagesCallback() {
         const avatarId = characters[chId].avatar;
         const meta = getCharGalleryMeta(avatarId);
         const pinned = Object.entries(meta).filter(([, v]) => v.enabled);
-        const max = s.charExtraImagesMax || 8;
+        const max = Number.isFinite(s.charExtraImagesMax) ? Math.max(0, s.charExtraImagesMax) : 8;
         const galleryPosLabel = s.positionGalleryImages === 'user' ? ' → user' : '';
         const qLabel = s.qualityGalleryImages === 'global' ? '' : ` · ${s.qualityGalleryImages}`;
         if (pinned.length) {
@@ -1997,7 +1999,7 @@ async function ppImagesCallback() {
         const extraPosLabel = s.positionExtraImages === 'user' ? ' → user' : '';
         const qLabel = s.qualityExtraImages === 'global' ? '' : ` · ${s.qualityExtraImages}`;
         if (extras.length) {
-            const max = s.maxExtraImages || 8;
+            const max = Number.isFinite(s.maxExtraImages) ? Math.max(0, s.maxExtraImages) : 8;
             const list = extras.slice(0, max).map(m => m.label || m.filename).join(', ');
             lines.push(item(`Persona extras (${Math.min(extras.length, max)} of ${extras.length} available, max ${max})${qLabel}${extraPosLabel}`, list));
         } else {
@@ -2011,7 +2013,7 @@ async function ppImagesCallback() {
         const lbPosLabel = s.positionLorebookImages === 'user' ? ' → user' : '';
         const lbQ = s.qualityLorebookImages === 'global' ? '' : ` · ${s.qualityLorebookImages}`;
         if (entries.size) {
-            const max = lbSettings.lorebookImagesMax || 4;
+            const max = Number.isFinite(lbSettings.lorebookImagesMax) ? Math.max(0, lbSettings.lorebookImagesMax) : 4;
             let remaining = max;
             const entryLines = [];
             for (const [, entry] of entries) {

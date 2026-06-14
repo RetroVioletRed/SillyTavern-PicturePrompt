@@ -66,7 +66,7 @@ export async function injectLorebookImages(chat, quality, s) {
         return;
     }
 
-    const maxTotal = s.lorebookImagesMax || 8;
+    const maxTotal = Number.isFinite(s.lorebookImagesMax) ? Math.max(0, s.lorebookImagesMax) : 8;
 
     // ── Group entries by position ─────────────────
     // ST's world_info_position: 0=before, 1=after, 2=ANTop, 3=ANBottom,
