@@ -49,7 +49,7 @@ export function getCachedActiveEntries() {
  * @param {string} quality - Image detail level ('low', 'high', 'auto')
  * @param {{ lorebookImagesEnabled: boolean, lorebookImagesMax: number }} s - Pre-read lorebook settings
  */
-export async function injectLorebookImages(chat, quality, s) {
+export async function injectLorebookImages(chat, quality, s, getUserTarget) {
     if (!s.lorebookImagesEnabled) {
         console.debug('[PP-Lorebook] lorebookImagesEnabled is false — skipping injection');
         return;
@@ -101,18 +101,10 @@ export async function injectLorebookImages(chat, quality, s) {
     if (s.positionLorebookImages === 'user') {
         console.debug('[PP-Lorebook] User-position mode — injecting all lorebook images into last user message');
 
-        function findLastUserMessage(chat) {
-            for (let i = chat.length - 1; i >= 0; i--) {
-                if (chat[i].role === 'user') return chat[i];
-            }
-            return null;
-        }
-
-        const userMsg = findLastUserMessage(chat);
+        const userMsg = getUserTarget(chat);
         if (!userMsg) {
-            console.debug('[PP-Lorebook] No user message found — skipping injection');
-            return;
-        }
+            console.debug('[PP-Lorebook] No user message found — falling back to system-position routing');
+        } else {
         if (typeof userMsg.content === 'string') {
             userMsg.content = [{ type: 'text', text: userMsg.content }];
         }
@@ -172,6 +164,7 @@ export async function injectLorebookImages(chat, quality, s) {
         }
         console.debug(`[PP-Lorebook] User-position mode — injected ${injectedCount} image(s)`);
         return;
+        }
     }
 
     // ── Identify Author's Note and Example Messages ─────────────────
