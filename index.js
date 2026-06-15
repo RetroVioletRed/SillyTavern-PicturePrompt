@@ -1703,7 +1703,6 @@ async function onPromptReady(eventData) {
     if (s.injectChar && !isGroupChat()) {
         const charPosition = s.positionCharAvatar || 'system';
         let charTarget = charPosition === 'user' ? (getUserTarget(chat) || msg) : msg;
-        let charSearchText = '';
         const url = getCharacterAvatarUrl();
         if (url) {
             const base64Data = await urlToBase64(url);
@@ -1716,6 +1715,7 @@ async function onPromptReady(eventData) {
                     }
                 } else {
                     // Find the system message containing the raw personality text
+                    let charSearchText = '';
                     try {
                         charSearchText = (characters?.[chId]?.data?.personality || '').trim();
                         if (!charSearchText) {
@@ -1739,24 +1739,33 @@ async function onPromptReady(eventData) {
         } else {
             warnOnce('char-missing', 'No character avatar set. Set one in the character panel.');
         }
-
-        // Character gallery extras — respect positionGalleryImages setting
-        if (s.charExtraImagesEnabled) {
-            const galleryPosition = s.positionGalleryImages || 'system';
-            let galleryTarget;
-            if (galleryPosition === 'user') {
-                galleryTarget = getUserTarget(chat) || msg;
-            } else {
-                const gMsg = charSearchText
-                    ? chat.find(m => m.role === 'system' && getMessageText(m).includes(charSearchText))
-                    : null;
-                galleryTarget = (gMsg && ensureContentBlocks(gMsg)) ? gMsg : msg;
-            }
-            ensureContentBlocks(galleryTarget);
-            await injectCharGalleryImages(galleryTarget, getSourceQuality(s.qualityGalleryImages), s.charExtraImagesMax);
-        }
     } else if (s.injectChar && isGroupChat()) {
-        warnOnce('group-chat', 'Character avatar and gallery injection skipped — not available in group chats. Persona and lorebook injection still active.');
+        warnOnce('group-chat', 'Character avatar injection skipped — not available in group chats. Persona and lorebook injection still active.');
+    }
+
+    // Character gallery extras — independent of injectChar; can be enabled solo.
+    if (s.charExtraImagesEnabled && !isGroupChat()) {
+        const galleryPosition = s.positionGalleryImages || 'system';
+        let galleryTarget;
+        if (galleryPosition === 'user') {
+            galleryTarget = getUserTarget(chat) || msg;
+        } else {
+            // Find the system message containing the character personality text
+            let charSearchText = '';
+            try {
+                charSearchText = (characters?.[chId]?.data?.personality || '').trim();
+                if (!charSearchText) {
+                    charSearchText = (characters?.[chId]?.data?.description || '').trim();
+                }
+            } catch {}
+            charSearchText = charSearchText.replace(/{{user}}/gi, userName).replace(/{{char}}/gi, charName);
+            const gMsg = charSearchText
+                ? chat.find(m => m.role === 'system' && getMessageText(m).includes(charSearchText))
+                : null;
+            galleryTarget = (gMsg && ensureContentBlocks(gMsg)) ? gMsg : msg;
+        }
+        ensureContentBlocks(galleryTarget);
+        await injectCharGalleryImages(galleryTarget, getSourceQuality(s.qualityGalleryImages), s.charExtraImagesMax);
     }
 
     // Lorebook images — inject into system messages alongside world info text
@@ -1799,30 +1808,31 @@ async function onPromptReady(eventData) {
             warnOnce('persona-missing', 'No persona avatar set. Set one in the persona panel.');
         }
 
-        // Persona extra images — respect positionExtraImages setting
-        if (s.extraImagesEnabled && user_avatar) {
-            const extrasPosition = s.positionExtraImages || 'system';
-            let extrasTarget;
-            if (extrasPosition === 'user') {
-                extrasTarget = getUserTarget(chat) || msg;
-            } else {
-                const eMsg = resolvedPersonaDesc
-                    ? chat.find(m => m.role === 'system' && getMessageText(m).includes(resolvedPersonaDesc))
-                    : null;
-                extrasTarget = (eMsg && ensureContentBlocks(eMsg)) ? eMsg : msg;
-            }
-            ensureContentBlocks(extrasTarget);
-            if (extrasTarget) {
-                const extras = await getExtraImagesForInjection(user_avatar);
-                const maxCount = Number.isFinite(s.maxExtraImages) ? Math.max(0, s.maxExtraImages) : 8;
-                const capped = extras.slice(0, maxCount);
-                for (const img of capped) {
-                    const perImageLabel = (img.label || '').trim();
-                    if (perImageLabel) {
-                        extrasTarget.content.push({ type: 'text', text: '\n' + perImageLabel });
-                    }
-                    extrasTarget.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: getSourceQuality(s.qualityExtraImages) } });
+    }
+
+    // Persona extra images — independent of injectPersona; can be enabled solo.
+    if (s.extraImagesEnabled && user_avatar) {
+        const extrasPosition = s.positionExtraImages || 'system';
+        let extrasTarget;
+        if (extrasPosition === 'user') {
+            extrasTarget = getUserTarget(chat) || msg;
+        } else {
+            const eMsg = resolvedPersonaDesc
+                ? chat.find(m => m.role === 'system' && getMessageText(m).includes(resolvedPersonaDesc))
+                : null;
+            extrasTarget = (eMsg && ensureContentBlocks(eMsg)) ? eMsg : msg;
+        }
+        ensureContentBlocks(extrasTarget);
+        if (extrasTarget) {
+            const extras = await getExtraImagesForInjection(user_avatar);
+            const maxCount = Number.isFinite(s.maxExtraImages) ? Math.max(0, s.maxExtraImages) : 8;
+            const capped = extras.slice(0, maxCount);
+            for (const img of capped) {
+                const perImageLabel = (img.label || '').trim();
+                if (perImageLabel) {
+                    extrasTarget.content.push({ type: 'text', text: '\n' + perImageLabel });
                 }
+                extrasTarget.content.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: getSourceQuality(s.qualityExtraImages) } });
             }
         }
     }
