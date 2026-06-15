@@ -16,7 +16,7 @@ import {
 import { power_user } from '../../../power-user.js';
 import { oai_settings } from '../../../openai.js';
 import { getImageSizeFromDataURL } from '../../../utils.js';
-import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, deactivateLorebookInject } from './lorebook-inject.js';
+import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, getActiveEntries, deactivateLorebookInject } from './lorebook-inject.js';
 import { initLorebookUI, deactivateLorebookUI } from './lorebook-ui.js';
 import { openDB, blobToDataURL, escapeHtml, getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached, clearFetchCache, STORE_NAME, enableGridDragReorder } from './lorebook-images.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
@@ -1413,7 +1413,7 @@ async function getTotalImageTokenEstimate() {
     // Lorebook images — iterate cached active entries
     if (s.lorebookImagesEnabled) {
         const lbSettings = getLorebookSettings();
-        const entries = getCachedActiveEntries();
+        const entries = await getActiveEntries();
         let lbInjected = 0;
         const lbMax = Number.isFinite(lbSettings.lorebookImagesMax) ? Math.max(0, lbSettings.lorebookImagesMax) : 4;
         const q = getSourceQuality(s.qualityLorebookImages);
@@ -1955,7 +1955,7 @@ async function ppStatusCallback() {
     }
 
     // Lorebook
-    const lbEntries = getCachedActiveEntries();
+    const lbEntries = await getActiveEntries();
     let lbImageCount = 0;
     for (const [, entry] of lbEntries) {
         const imgs = getLorebookImages(entry.world || '', String(entry.uid));
@@ -2033,7 +2033,7 @@ async function ppImagesCallback() {
 
     // Lorebook
     if (s.lorebookImagesEnabled) {
-        const entries = getCachedActiveEntries();
+        const entries = await getActiveEntries();
         const lbPosLabel = s.positionLorebookImages === 'user' ? ' → user' : '';
         const lbQ = s.qualityLorebookImages === 'global' ? '' : ` · ${s.qualityLorebookImages}`;
         if (entries.size) {

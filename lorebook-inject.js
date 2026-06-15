@@ -14,9 +14,12 @@ import {
     regex_placement,
 } from '../../../extensions/regex/engine.js';
 import {
+    checkWorldInfo,
     DEFAULT_DEPTH,
+    world_info_include_names,
     world_info_position,
 } from '../../../world-info.js';
+import { getContext } from '../../../extensions.js';
 
 // ── Active Entry Cache ─────────────────
 
@@ -33,6 +36,67 @@ let _activeEntries = new Map();
  * @returns {Map<string, object>}
  */
 export function getCachedActiveEntries() {
+    return _activeEntries;
+}
+
+// ── Proactive Cache Population ─────────────────
+
+/**
+ * Populate _activeEntries if empty by calling checkWorldInfo directly
+ * with a dry run, then extracting activated entries from the result.
+ * Avoids firing WORLD_INFO_ACTIVATED (no side-effect on other extensions).
+ */
+async function ensureActiveEntriesCache() {
+    if (_activeEntries.size > 0) return;
+
+    const context = getContext();
+    const chat = context.chat;
+    if (!chat || !chat.length) return;
+
+    // Build chatForWI: filter system messages, reverse, optional name prefix
+    const coreChat = chat.filter(x => !x.is_system);
+    const chatForWI = coreChat.map(x => world_info_include_names ? `${x.name}: ${x.mes}` : x.mes).reverse();
+
+    // Build globalScanData from current character/persona
+    const fields = context.getCharacterCardFields();
+    const globalScanData = {
+        personaDescription: fields.persona || '',
+        characterDescription: fields.description || '',
+        characterPersonality: fields.personality || '',
+        characterDepthPrompt: fields.charDepthPrompt || '',
+        scenario: fields.scenario || '',
+        creatorNotes: fields.creatorNotes || '',
+        trigger: 'normal',
+    };
+
+    // Generous maxContext — scan all entries regardless of token budget
+    const maxContext = 100000;
+
+    try {
+        const result = await checkWorldInfo(chatForWI, maxContext, true, globalScanData);
+        if (result.allActivatedEntries && result.allActivatedEntries.size > 0) {
+            clearFetchCache();
+            _activeEntries.clear();
+            for (const entry of result.allActivatedEntries) {
+                if (!entry || entry.uid === undefined) continue;
+                const worldName = entry.world || '';
+                const key = `${worldName}.${entry.uid}`;
+                _activeEntries.set(key, entry);
+            }
+            console.debug(`[PP-Lorebook] Proactively cached ${_activeEntries.size} active entries from checkWorldInfo`);
+        }
+    } catch (err) {
+        console.debug('[PP-Lorebook] Proactive world info check failed — cache left empty:', err);
+    }
+}
+
+/**
+ * Get active lorebook entries, proactively populating cache if empty.
+ * Prefer this over getCachedActiveEntries() to avoid stale-cache races.
+ * @returns {Promise<Map<string, object>>}
+ */
+export async function getActiveEntries() {
+    await ensureActiveEntriesCache();
     return _activeEntries;
 }
 
@@ -55,9 +119,9 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
         return;
     }
 
-    const entries = _activeEntries;
+    const entries = await getActiveEntries();
     if (!entries || entries.size === 0) {
-        console.debug('[PP-Lorebook] No cached active lorebook entries — skipping injection');
+        console.debug('[PP-Lorebook] No active lorebook entries — skipping injection');
         return;
     }
 
