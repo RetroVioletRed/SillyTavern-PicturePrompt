@@ -231,6 +231,7 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
 
         // Rebuild content array: for each entry, find its text, insert images right after
         const rebuilt = [];
+        const fallbackEntries = [];
         let pos = 0;
 
         for (const { key, entry } of entryList) {
@@ -250,7 +251,8 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
             // Find the resolved entry text in the full text from current position
             const foundIdx = fullText.indexOf(resolvedContent, pos);
             if (foundIdx === -1) {
-                console.debug(`[PP-Lorebook] Entry ${key} text not found in system message at/after pos=${pos}`);
+                console.debug(`[PP-Lorebook] Entry ${key} text not found in system message — falling back to append`);
+                fallbackEntries.push({ key, entry });
                 continue;
             }
 
@@ -336,6 +338,65 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
 
         // Append any non-text blocks that existed before (e.g. from prior injections)
         rebuilt.push(...nonTextBlocks);
+
+        // Fallback: append images for entries whose text wasn't found
+        for (const { key, entry } of fallbackEntries) {
+            if (injectedCount >= maxTotal) break;
+            const images = getLorebookImages(entry.world || '', String(entry.uid));
+            if (!images || images.length === 0) continue;
+            const enabledImages = images.filter(img => img.enabled !== false);
+            if (enabledImages.length === 0) continue;
+            const remaining = maxTotal - injectedCount;
+            const toInject = enabledImages.slice(0, remaining);
+            if (toInject.length === 0) continue;
+
+            const wName = entry.world || '';
+            const uid = String(entry.uid);
+            const dataUrlByFilename = new Map();
+            const uncachedFilenames = [];
+            for (const img of toInject) {
+                const cacheKey = 'lb::' + wName + '::' + uid + '::' + img.filename;
+                const hit = getCached(cacheKey);
+                if (hit !== undefined) {
+                    dataUrlByFilename.set(img.filename, hit);
+                } else {
+                    uncachedFilenames.push(img.filename);
+                }
+            }
+
+            if (uncachedFilenames.length > 0) {
+                try {
+                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
+                    for (const [filename, dataUrl] of fresh) {
+                        const cacheKey = 'lb::' + wName + '::' + uid + '::' + filename;
+                        setCached(cacheKey, dataUrl);
+                        dataUrlByFilename.set(filename, dataUrl);
+                    }
+                } catch (err) {
+                    console.debug(`[PP-Lorebook] Fallback batch fetch failed for entry ${key}:`, err);
+                }
+            }
+
+            for (const img of toInject) {
+                const base64Data = dataUrlByFilename.get(img.filename);
+                if (!base64Data) {
+                    console.debug(`[PP-Lorebook] No data URL for ${img.filename} in fallback entry ${key} — skipping`);
+                    continue;
+                }
+                try {
+                    const label = (img.label || '').trim();
+                    rebuilt.push({ type: 'text', text: label ? '\n' + label : '\n' });
+                    rebuilt.push({
+                        type: 'image_url',
+                        image_url: { url: base64Data, detail: quality },
+                    });
+                    injectedCount++;
+                    console.debug(`[PP-Lorebook] Fallback-injected image from entry ${key} (${injectedCount}/${maxTotal}), base64 len=${base64Data?.length || 0}`);
+                } catch (err) {
+                    console.debug(`[PP-Lorebook] Failed to inject fallback image from entry ${key}:`, err);
+                }
+            }
+        }
 
         targetMsg.content = rebuilt;
     }

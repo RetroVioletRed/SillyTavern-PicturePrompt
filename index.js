@@ -1425,7 +1425,7 @@ async function getTotalImageTokenEstimate() {
             const uid = String(entry.uid);
 
             const toInject = enabledImages.slice(0, lbMax - lbInjected);
-            if (!toInject.length) break;
+            if (!toInject.length) continue;
 
             const dataUrlByFilename = new Map();
             const uncachedFilenames = [];
