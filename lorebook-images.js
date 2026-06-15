@@ -262,10 +262,12 @@ function resolveKey(worldName, entryUid) {
     const store = ensureLIMeta();
     const exact = liMetaKey(worldName, entryUid);
     if (store[exact]) return exact;
-    // Fallback: search for any key ending with ::entryUid
+    // Fallback: search for a key matching this lorebook (case/spacing drift)
+    // Repaired — must match the same world, not any world sharing an entryUid.
+    const prefix = worldName + '::';
     const suffix = `::${entryUid}`;
     for (const k of Object.keys(store)) {
-        if (k.endsWith(suffix)) return k;
+        if (k.startsWith(prefix) && k.endsWith(suffix)) return k;
     }
     return exact; // return exact key even if not found (for write operations)
 }

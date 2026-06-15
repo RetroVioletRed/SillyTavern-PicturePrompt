@@ -18,7 +18,6 @@ import {
     toggleLorebookImage as toggleLorebookImageMeta,
     updateLorebookImageLabel,
     setLorebookImages,
-    ensureLIMeta,
     escapeHtml,
     enableGridDragReorder,
 } from './lorebook-images.js';
@@ -392,19 +391,6 @@ async function uploadLorebookImage(worldName, entryUid, file) {
         toastr.error('Upload failed. Check console for details.');
     }
 }
-
-// Debug helper — call from console: PP_Lorebook.debug()
-window.PP_Lorebook = {
-    debug() {
-        const meta = ensureLIMeta();
-        const keys = Object.keys(meta);
-        console.log('[PP-Lorebook] lorebookImages metadata keys:', keys);
-        for (const k of keys) {
-            console.log(`[PP-Lorebook]   ${k}: ${meta[k].length} image(s)`);
-        }
-        toastr.info(`lorebookImages has ${keys.length} entries: ${keys.join(', ') || '(none)'}`, 'PP Debug');
-    }
-};
 
 /**
  * Delete a single image for a lorebook entry.
