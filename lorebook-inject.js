@@ -187,14 +187,29 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
     }
     console.debug(`[PP-Lorebook] Author's Note msg: ${anMsg ? 'found' : 'not found'}, Example Msgs: ${emMsg ? 'found' : 'not found'}`);
 
-    // ── Identify which system message holds worldInfoBefore / worldInfoAfter ─
-    // In preparePromptsForChatCompletion (openai.js:1367-1375), system messages
-    // are added in order: worldInfoBefore, worldInfoAfter, charDescription,
-    // charPersonality, scenario, impersonate, quietPrompt, groupNudge.
-    // With squash_system_messages=false, the first is worldInfoBefore,
-    // the second is worldInfoAfter.
-    const wiBeforeMsg = systemMessages[0].message;
-    const wiAfterMsg = systemMessages.length > 1 ? systemMessages[1].message : null;
+    // ── Find which system messages hold worldInfoBefore / worldInfoAfter ─
+    // ST's populateChatCompletion inserts 'main' between them, so we search
+    // by resolved entry text rather than assuming fixed indices.
+    const findWorldInfoMessage = (entryList) => {
+        if (!entryList || !entryList.length) return null;
+        const e = entryList[0].entry;
+        const isAtDepth = e.position === world_info_position.atDepth;
+        const regexDepth = isAtDepth ? (e.depth ?? DEFAULT_DEPTH) : undefined;
+        const needle = getRegexedString(e.content || '', regex_placement.WORLD_INFO, { depth: regexDepth, isMarkdown: false, isPrompt: true });
+        if (!needle) return null;
+        for (const sm of systemMessages) {
+            const text = typeof sm.message.content === 'string'
+                ? sm.message.content
+                : Array.isArray(sm.message.content)
+                    ? sm.message.content.filter(b => b.type === 'text').map(b => b.text).join('')
+                    : '';
+            if (text.includes(needle)) return sm.message;
+        }
+        return null;
+    };
+    // Index-based fallbacks — overridden by content search below
+    let wiBeforeMsg = systemMessages[0]?.message;
+    let wiAfterMsg = systemMessages.length > 1 ? systemMessages[1]?.message : null;
 
     let injectedCount = 0;
 
@@ -403,7 +418,8 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
 
     // ── Inject position=0 entries into worldInfoBefore message ─
     const beforeEntries = (byPosition.get(0) || [])
-        .sort((a, b) => (b.entry.order || 100) - (a.entry.order || 100));
+        .sort((a, b) => (a.entry.order || 100) - (b.entry.order || 100));
+    wiBeforeMsg = findWorldInfoMessage(beforeEntries) || wiBeforeMsg;
     if (beforeEntries.length > 0) {
         console.debug(`[PP-Lorebook] Injecting ${beforeEntries.length} position=0 entries into worldInfoBefore system message`);
         await injectIntoSystemMsg(wiBeforeMsg, beforeEntries);
@@ -411,7 +427,8 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
 
     // ── Inject position=1 entries into worldInfoAfter message ─
     const afterEntries = (byPosition.get(1) || [])
-        .sort((a, b) => (b.entry.order || 100) - (a.entry.order || 100));
+        .sort((a, b) => (a.entry.order || 100) - (b.entry.order || 100));
+    wiAfterMsg = findWorldInfoMessage(afterEntries) || wiAfterMsg;
     if (afterEntries.length > 0 && wiAfterMsg && wiAfterMsg !== wiBeforeMsg) {
         console.debug(`[PP-Lorebook] Injecting ${afterEntries.length} position=1 entries into worldInfoAfter system message`);
         await injectIntoSystemMsg(wiAfterMsg, afterEntries);
