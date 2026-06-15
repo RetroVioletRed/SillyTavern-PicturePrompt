@@ -2164,5 +2164,10 @@ export async function deactivate() {
     deactivateLorebookUI();
     deactivateLorebookInject();
 
+    // ── Slash commands (no public remove API — delete from internal registry) ──
+    delete SlashCommandParser.commands['pp-status'];
+    delete SlashCommandParser.commands['pp-images'];
+    delete SlashCommandParser.commands['pp-cache'];
+
     console.debug('[Picture Prompt] Deactivated');
 }
