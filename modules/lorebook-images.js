@@ -1,25 +1,9 @@
-import { extension_settings } from '../../../extensions.js';
-import { saveSettingsDebounced } from '../../../../script.js';
+import { SEL } from './selectors.js';
+import { openDB, blobToDataURL, STORE_NAME } from './storage.js';
+import { extension_settings } from '../../../../extensions.js';
+import { saveSettingsDebounced } from '../../../../../script.js';
 
 // ── Constants ───────────────────────────
-
-/**
- * IndexedDB database name — shared with the main PicturePrompt extension.
- * @type {string}
- */
-const DB_NAME = 'PicturePrompt';
-
-/**
- * IndexedDB database version.
- * @type {number}
- */
-const DB_VERSION = 1;
-
-/**
- * Object store name — shared with the main PicturePrompt extension.
- * @type {string}
- */
-export const STORE_NAME = 'extraImages';
 
 /**
  * Settings namespace within extension_settings.
@@ -37,41 +21,6 @@ const DEFAULT_LOREBOOK_SETTINGS = {
 };
 
 // ── IndexedDB Helpers ────────────────────
-
-/**
- * Cached connection promise — reused across all DB operations.
- * Reset on error so the next attempt opens a fresh connection.
- * @type {Promise<IDBDatabase>|null}
- */
-let _dbPromise = null;
-
-/**
- * Open (or create) the IndexedDB database.
- * The connection is cached so multiple calls within a single prompt
- * cycle (e.g. putLorebookImage → listLorebookImages → getLorebookImage)
- * reuse the same handle instead of opening 10–20 separate connections.
- * @returns {Promise<IDBDatabase>}
- */
-function openDB() {
-    if (!_dbPromise) {
-        _dbPromise = new Promise((resolve, reject) => {
-            const req = indexedDB.open(DB_NAME, DB_VERSION);
-            req.onupgradeneeded = () => {
-                if (!req.result.objectStoreNames.contains(STORE_NAME)) {
-                    req.result.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                }
-            };
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => {
-                _dbPromise = null; // clear cache so next attempt retries
-                reject(req.error);
-            };
-        });
-    }
-    return _dbPromise;
-}
-
-export { openDB };
 
 /**
  * Build the IndexedDB key for a lorebook image.
@@ -440,34 +389,6 @@ export function saveLorebookSettings(partial) {
     saveSettingsDebounced();
 }
 
-// ── Shared Utilities ──────────────────────
-
-/**
- * Convert a Blob to a base64 data URL.
- * @param {Blob} blob
- * @returns {Promise<string>}
- */
-export function blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-    });
-}
-
-/**
- * HTML-escape a string for safe DOM insertion.
- * Reuses a single cached element instead of allocating per call.
- * @param {string} str
- * @returns {string}
- */
-const _escapeDiv = document.createElement('div');
-export function escapeHtml(str) {
-    _escapeDiv.textContent = str ?? '';
-    return _escapeDiv.innerHTML;
-}
-
 // ── Image Data URL Cache ──────────────────
 // Prevents double-fetching images during the token-estimate → prompt-inject
 // cycle. Invalidated on CHAT_CHANGED, PERSONA_CHANGED, WORLD_INFO_ACTIVATED.
@@ -560,7 +481,7 @@ export function enableGridDragReorder(gridSelector, getArray, setArray) {
     /** Find the nearest card to the cursor, excluding the dragged card & placeholder. */
     function findTarget(x, y) {
         let best = null, bestDist = Infinity, bestBefore = false;
-        for (const c of grid.querySelectorAll('.picture-prompt-image-card')) {
+        for (const c of grid.querySelectorAll(SEL.picturePromptImageCard)) {
             if (c === card) continue;
             if (c.classList.contains('pp-placeholder')) continue;
             const r = c.getBoundingClientRect();
@@ -579,7 +500,7 @@ export function enableGridDragReorder(gridSelector, getArray, setArray) {
     function captureFlip() {
         const before = new Map();
         const items = [];
-        for (const c of grid.querySelectorAll('.picture-prompt-image-card')) {
+        for (const c of grid.querySelectorAll(SEL.picturePromptImageCard)) {
             if (c === card) continue;
             if (c.classList.contains('pp-placeholder')) continue;
             const r = c.getBoundingClientRect();
@@ -747,7 +668,7 @@ export function enableGridDragReorder(gridSelector, getArray, setArray) {
         el.style.transform  = '';
         el.classList.remove('pp-dragging');
         // Clear any leftover transforms on other cards
-        for (const c of grid.querySelectorAll('.picture-prompt-image-card')) {
+        for (const c of grid.querySelectorAll(SEL.picturePromptImageCard)) {
             c.style.transition = '';
             c.style.transform  = '';
         }
@@ -757,7 +678,7 @@ export function enableGridDragReorder(gridSelector, getArray, setArray) {
     }
 
     function persistOrder() {
-        const filenames = [...grid.querySelectorAll('.picture-prompt-image-card')]
+        const filenames = [...grid.querySelectorAll(SEL.picturePromptImageCard)]
             .filter(c => !c.classList.contains('pp-placeholder'))
             .map(c => c.dataset.filename);
         const arr = getArray();

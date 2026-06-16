@@ -1,7 +1,7 @@
 import {
     eventSource,
     event_types,
-} from '../../../events.js';
+} from '../../../../events.js';
 import {
     getLorebookImages,
     getLorebookImagesDataUrls,
@@ -12,14 +12,14 @@ import {
 import {
     getRegexedString,
     regex_placement,
-} from '../../../extensions/regex/engine.js';
+} from '../../../../extensions/regex/engine.js';
 import {
     checkWorldInfo,
     DEFAULT_DEPTH,
     world_info_include_names,
     world_info_position,
-} from '../../../world-info.js';
-import { getContext } from '../../../extensions.js';
+} from '../../../../world-info.js';
+import { getContext } from '../../../../extensions.js';
 
 // ── Active Entry Cache ─────────────────
 

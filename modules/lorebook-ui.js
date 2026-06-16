@@ -8,6 +8,8 @@
  * @module lorebook-ui
  */
 
+import { SEL } from './selectors.js';
+import { escapeHtml } from './storage.js';
 import {
     getLorebookImage,
     putLorebookImage,
@@ -18,7 +20,6 @@ import {
     toggleLorebookImage as toggleLorebookImageMeta,
     updateLorebookImageLabel,
     setLorebookImages,
-    escapeHtml,
     enableGridDragReorder,
 } from './lorebook-images.js';
 // ── Module Name ───────────────────────────────
@@ -57,7 +58,7 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
     const $grid = $container.find('.pp-lorebook-grid');
     const $empty = $container.find('.pp-lorebook-empty');
     // .pp-li-count is in the header (sibling of content), not inside content
-    const $count = $container.closest('.pp-lorebook-images').find('.pp-li-count');
+    const $count = $container.closest(SEL.ppLorebookImages).find(SEL.ppLiCount);
 
     // Update count
     if ($count.length) {
@@ -132,7 +133,7 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
     }
 
     $grid.find('.btn-edit-label').off('click').on('click', function () {
-        const $card = $(this).closest('.picture-prompt-image-card');
+        const $card = $(this).closest(SEL.picturePromptImageCard);
         const $overlay = $card.find('.pp-label-edit');
         startLabelEdit($overlay);
     });
@@ -145,7 +146,7 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
     $grid.off('blur', '.pp-label-input').on('blur', '.pp-label-input', function () {
         const $input = $(this);
         const $overlay = $input.parent();
-        const $card = $overlay.closest('.picture-prompt-image-card');
+        const $card = $overlay.closest(SEL.picturePromptImageCard);
         const filename = $card.data('filename');
         const newLabel = $input.val().trim();
         updateLorebookImageLabel(worldName, entryUid, filename, newLabel);
@@ -373,7 +374,7 @@ async function uploadLorebookImage(worldName, entryUid, file) {
         let label = '';
         const $section = $(`.pp-lorebook-images[data-entry-uid="${escapeHtml(String(entryUid))}"]`);
         if ($section.length) {
-            const comment = $section.closest('.world_entry').find('textarea[name="comment"]').val()?.trim();
+            const comment = $section.closest(SEL.worldEntry).find(SEL.commentTextarea).val()?.trim();
             label = comment ? comment + ':' : base.replace(/[_-]/g, ' ');
         } else {
             label = base.replace(/[_-]/g, ' ');
@@ -454,20 +455,17 @@ function resolveEntryUid($worldEntry) {
  * Start watching for world info entry editors being opened.
  * Injects the lorebook image section when a drawer opens.
  */
-export function initLorebookUI() {
-    if (_lorebookObserver) {
-        console.debug('[PP-Lorebook] Observer already running');
+export function initLorebookUI(_retries = 0) {
+    if (_lorebookObserver) return;
+
+    if (!document.querySelector(SEL.worldPopupEntriesList)) {
+        if (_retries === 0) console.debug('[PP-Lorebook] World info panel not yet in DOM, retrying');
+        if (_retries < 30) setTimeout(() => initLorebookUI(_retries + 1), 2000);
+        else console.debug('[PP-Lorebook] Giving up on world info panel after 60s');
         return;
     }
 
     console.debug('[PP-Lorebook] Initializing lorebook UI observer');
-
-    // If world info panel isn't in DOM yet, retry
-    if (!document.getElementById('world_popup_entries_list')) {
-        console.debug('[PP-Lorebook] World info panel not yet in DOM, retrying in 2s');
-        setTimeout(initLorebookUI, 2000);
-        return;
-    }
 
     _lorebookObserver = new MutationObserver(function (mutations) {
         for (const m of mutations) {
@@ -475,15 +473,15 @@ export function initLorebookUI() {
                 if (!(node instanceof Element)) continue;
 
                 // Check if any added node contains, is, or is inside an inline-drawer-outlet
-                const $outlets = $(node).is('.inline-drawer-outlet')
+                const $outlets = $(node).is(SEL.inlineDrawerOutlet)
                     ? $(node)
-                    : ($(node).find('.inline-drawer-outlet').length
-                        ? $(node).find('.inline-drawer-outlet')
-                        : $(node).closest('.inline-drawer-outlet'));
+                    : ($(node).find(SEL.inlineDrawerOutlet).length
+                        ? $(node).find(SEL.inlineDrawerOutlet)
+                        : $(node).closest(SEL.inlineDrawerOutlet));
 
                 $outlets.each(function () {
                     const $outlet = $(this);
-                    const $worldEntry = $outlet.closest('.world_entry');
+                    const $worldEntry = $outlet.closest(SEL.worldEntry);
                     if (!$worldEntry.length) {
                         console.debug('[PP-Lorebook] Found outlet not inside a .world_entry, skipping');
                         return;
@@ -521,12 +519,12 @@ export function initLorebookUI() {
  * Scan for existing open editors and inject sections if not already present.
  */
 function scanExistingEditors() {
-    const $outlets = $('.world_entry .inline-drawer-outlet:visible');
+    const $outlets = $(SEL.worldEntry + ' ' + SEL.inlineDrawerOutlet + ':visible');
     $outlets.each(function () {
         const $outlet = $(this);
-        if ($outlet.find('.pp-lorebook-images').length) return;
+        if ($outlet.find(SEL.ppLorebookImages).length) return;
 
-        const $worldEntry = $outlet.closest('.world_entry');
+        const $worldEntry = $outlet.closest(SEL.worldEntry);
         if (!$worldEntry.length) return;
 
         const uid = resolveEntryUid($worldEntry);
