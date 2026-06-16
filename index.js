@@ -86,6 +86,7 @@ async function _onPromptReady(eventData) {
 }
 
 function _onSettingsUpdated() {
+    clearFetchCache();
     refreshTokenEstimate();
 }
 
