@@ -23,6 +23,9 @@ import { getContext } from '../../../extensions.js';
 
 // ── Active Entry Cache ─────────────────
 
+/** Safety net: if checkWorldInfo hangs, bail after this many ms. */
+const ENSURE_CACHE_TIMEOUT_MS = 5000;
+
 /**
  * Cache of active lorebook entries keyed by `${worldName}.${entryUid}`.
  * Populated on WORLD_INFO_ACTIVATED, cleared on CHAT_CHANGED.
@@ -73,7 +76,10 @@ async function ensureActiveEntriesCache() {
     const maxContext = 100000;
 
     try {
-        const result = await checkWorldInfo(chatForWI, maxContext, true, globalScanData);
+        const result = await Promise.race([
+            checkWorldInfo(chatForWI, maxContext, true, globalScanData),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ENSURE_CACHE_TIMEOUT_MS)),
+        ]);
         if (result.allActivatedEntries && result.allActivatedEntries.size > 0) {
             clearFetchCache();
             _activeEntries.clear();
@@ -86,7 +92,11 @@ async function ensureActiveEntriesCache() {
             console.debug(`[PP-Lorebook] Proactively cached ${_activeEntries.size} active entries from checkWorldInfo`);
         }
     } catch (err) {
-        console.debug('[PP-Lorebook] Proactive world info check failed — cache left empty:', err);
+        if (err?.message === 'Timeout') {
+            console.debug('[PP-Lorebook] Proactive world info check timed out after ' + ENSURE_CACHE_TIMEOUT_MS + 'ms — cache left empty');
+        } else {
+            console.debug('[PP-Lorebook] Proactive world info check failed — cache left empty:', err);
+        }
     }
 }
 
