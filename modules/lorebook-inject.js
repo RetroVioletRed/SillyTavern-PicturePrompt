@@ -3,10 +3,6 @@ import {
     event_types,
 } from '../../../../events.js';
 import {
-    getLorebookImages,
-    getLorebookImagesDataUrls,
-    getCached,
-    setCached,
     clearFetchCache,
 } from './lorebook-images.js';
 import {
@@ -116,21 +112,20 @@ export async function getActiveEntries() {
  * Inject lorebook images into the system message(s) that hold world info text
  * so images appear alongside the lore they illustrate.
  *
- * Called from onPromptReady in index.js — lorebook images go into the system
- * message containing world info text, NOT the chat message.
+ * Images come pre-resolved from the InjectionPlan — no duplicate fetching.
+ * Routing logic (position grouping, system message text matching) unchanged.
  *
  * @param {Array<object>} chat - The full chat array from CHAT_COMPLETION_PROMPT_READY
- * @param {string} quality - Image detail level ('low', 'high', 'auto')
- * @param {{ lorebookImagesEnabled: boolean, lorebookImagesMax: number }} s - Pre-read lorebook settings
+ * @param {object} lorebookPlan - { enabled, quality, position, maxTotal, entries }
+ * @param {function} getUserTarget - Function to find the last user message
  */
-export async function injectLorebookImages(chat, quality, s, getUserTarget) {
-    if (!s.lorebookImagesEnabled) {
+export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
+    if (!lorebookPlan.enabled) {
         console.debug('[PP-Lorebook] lorebookImagesEnabled is false — skipping injection');
         return;
     }
 
-    const entries = await getActiveEntries();
-    if (!entries || entries.size === 0) {
+    if (!lorebookPlan.entries.length) {
         console.debug('[PP-Lorebook] No active lorebook entries — skipping injection');
         return;
     }
@@ -140,18 +135,19 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
         return;
     }
 
-    const maxTotal = Number.isFinite(s.lorebookImagesMax) ? Math.max(0, s.lorebookImagesMax) : 8;
+    const quality = lorebookPlan.quality;
+    const maxTotal = lorebookPlan.maxTotal;
 
     // ── Group entries by position ─────────────────
     // ST's world_info_position: 0=before, 1=after, 2=ANTop, 3=ANBottom,
     // 4=atDepth, 5=EMTop, 6=EMBottom, 7=outlet
 
-    /** @type {Map<number, Array<{key: string, entry: object}>>} */
+    /** @type {Map<number, Array<{key: string, entry: object, images: Array}>>} */
     const byPosition = new Map();
-    for (const [key, entry] of entries) {
-        const pos = typeof entry.position === 'number' ? entry.position : 0;
+    for (const item of lorebookPlan.entries) {
+        const pos = typeof item.entry.position === 'number' ? item.entry.position : 0;
         if (!byPosition.has(pos)) byPosition.set(pos, []);
-        byPosition.get(pos).push({ key, entry });
+        byPosition.get(pos).push(item);
     }
 
     // ── Find system messages ─────────────────
@@ -170,74 +166,39 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
     console.debug(`[PP-Lorebook] Found ${systemMessages.length} system message(s)`);
 
     // ── User-position shortcut ─────────────────
-    // When positionLorebookImages is 'user', bypass all system-message
-    // routing and inject all enabled lorebook images into the last user message.
-    if (s.positionLorebookImages === 'user') {
+    // When position is 'user', bypass all system-message routing and inject
+    // all enabled lorebook images into the last user message.
+    if (lorebookPlan.position === 'user') {
         console.debug('[PP-Lorebook] User-position mode — injecting all lorebook images into last user message');
 
         const userMsg = getUserTarget(chat);
         if (!userMsg) {
             console.debug('[PP-Lorebook] No user message found — falling back to system-position routing');
         } else {
-        if (typeof userMsg.content === 'string') {
-            userMsg.content = [{ type: 'text', text: userMsg.content }];
-        }
-        if (!Array.isArray(userMsg.content)) {
-            console.debug('[PP-Lorebook] Cannot inject — user message content is not an array');
+            if (typeof userMsg.content === 'string') {
+                userMsg.content = [{ type: 'text', text: userMsg.content }];
+            }
+            if (!Array.isArray(userMsg.content)) {
+                console.debug('[PP-Lorebook] Cannot inject — user message content is not an array');
+                return;
+            }
+
+            let injectedCount = 0;
+            for (const item of lorebookPlan.entries) {
+                if (injectedCount >= maxTotal) break;
+                for (const img of item.images) {
+                    if (injectedCount >= maxTotal) break;
+                    const label = (img.label || '').trim();
+                    userMsg.content.push({ type: 'text', text: label ? '\n' + label : '\n' });
+                    userMsg.content.push({
+                        type: 'image_url',
+                        image_url: { url: img.dataUrl, detail: quality },
+                    });
+                    injectedCount++;
+                }
+            }
+            console.debug(`[PP-Lorebook] User-position mode — injected ${injectedCount} image(s)`);
             return;
-        }
-
-        let injectedCount = 0;
-        for (const [key, entry] of entries) {
-            if (injectedCount >= maxTotal) break;
-            const wName = entry.world || '';
-            const uid = String(entry.uid);
-            const images = getLorebookImages(wName, uid);
-            const enabledImages = images.filter(img => img.enabled !== false);
-            if (!enabledImages.length) continue;
-
-            const remaining = maxTotal - injectedCount;
-            const toInject = enabledImages.slice(0, remaining);
-
-            const dataUrlByFilename = new Map();
-            const uncachedFilenames = [];
-            for (const img of toInject) {
-                const cacheKey = 'lb::' + wName + '::' + uid + '::' + img.filename;
-                const hit = getCached(cacheKey);
-                if (hit !== undefined) {
-                    dataUrlByFilename.set(img.filename, hit);
-                } else {
-                    uncachedFilenames.push(img.filename);
-                }
-            }
-
-            if (uncachedFilenames.length > 0) {
-                try {
-                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
-                    for (const [filename, dataUrl] of fresh) {
-                        const cacheKey = 'lb::' + wName + '::' + uid + '::' + filename;
-                        setCached(cacheKey, dataUrl);
-                        dataUrlByFilename.set(filename, dataUrl);
-                    }
-                } catch (err) {
-                    console.debug(`[PP-Lorebook] Batch fetch failed for entry ${key}:`, err);
-                }
-            }
-
-            for (const img of toInject) {
-                const base64Data = dataUrlByFilename.get(img.filename);
-                if (!base64Data) continue;
-                const label = (img.label || '').trim();
-                userMsg.content.push({ type: 'text', text: label ? '\n' + label : '\n' });
-                userMsg.content.push({
-                    type: 'image_url',
-                    image_url: { url: base64Data, detail: quality },
-                });
-                injectedCount++;
-            }
-        }
-        console.debug(`[PP-Lorebook] User-position mode — injected ${injectedCount} image(s)`);
-        return;
         }
     }
 
@@ -285,12 +246,13 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
     let wiBeforeMsg = systemMessages[0]?.message;
     let wiAfterMsg = systemMessages.length > 1 ? systemMessages[1]?.message : null;
 
-    let injectedCount = 0;
-
     /**
-     * Ensure a message's content is in array format and inject images.
+     * Ensure a message's content is in array format and inject images
+     * right after each entry's resolved text. Images are pre-resolved
+     * in the plan — no fetching needed.
+     *
      * @param {object} targetMsg - The system message to inject into
-     * @param {Array} entryList - [{key, entry}, ...] sorted by order
+     * @param {Array} entryList - [{key, entry, images}, ...] sorted by order
      */
     async function injectIntoSystemMsg(targetMsg, entryList) {
         // Convert content from string to array if needed
@@ -323,8 +285,9 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
         const fallbackEntries = [];
         let pos = 0;
 
-        for (const { key, entry } of entryList) {
-            if (injectedCount >= maxTotal) break;
+        for (const item of entryList) {
+            const { key, entry, images } = item;
+            if (!images || !images.length) continue;
 
             // Resolve entry content the same way ST does (macros, {{user}}, etc.)
             const isAtDepth = entry.position === world_info_position.atDepth;
@@ -341,7 +304,7 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
             const foundIdx = fullText.indexOf(resolvedContent, pos);
             if (foundIdx === -1) {
                 console.debug(`[PP-Lorebook] Entry ${key} text not found in system message — falling back to append`);
-                fallbackEntries.push({ key, entry });
+                fallbackEntries.push(item);
                 continue;
             }
 
@@ -357,63 +320,15 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
 
             pos = entryEnd;
 
-            // Get and inject images for this entry right after its text
-            const images = getLorebookImages(entry.world || '', String(entry.uid));
-            if (!images || images.length === 0) continue;
-
-            const enabledImages = images.filter(img => img.enabled !== false);
-            if (enabledImages.length === 0) continue;
-
-            const remaining = maxTotal - injectedCount;
-            const toInject = enabledImages.slice(0, remaining);
-            if (toInject.length === 0) continue;
-
-            // Separate cached vs. uncached images for this entry
-            const wName = entry.world || '';
-            const uid = String(entry.uid);
-            const dataUrlByFilename = new Map();
-            const uncachedFilenames = [];
-
-            for (const img of toInject) {
-                const cacheKey = 'lb::' + wName + '::' + uid + '::' + img.filename;
-                const hit = getCached(cacheKey);
-                if (hit !== undefined) {
-                    dataUrlByFilename.set(img.filename, hit);
-                } else {
-                    uncachedFilenames.push(img.filename);
-                }
-            }
-
-            // Batch-read uncached images in one IndexedDB transaction + parallel conversion
-            if (uncachedFilenames.length > 0) {
-                try {
-                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
-                    for (const [filename, dataUrl] of fresh) {
-                        const cacheKey = 'lb::' + wName + '::' + uid + '::' + filename;
-                        setCached(cacheKey, dataUrl);
-                        dataUrlByFilename.set(filename, dataUrl);
-                    }
-                } catch (err) {
-                    console.debug(`[PP-Lorebook] Batch fetch failed for entry ${key}:`, err);
-                }
-            }
-
-            // Inject images right after this entry's text block
-            for (const img of toInject) {
-                const base64Data = dataUrlByFilename.get(img.filename);
-                if (!base64Data) {
-                    console.debug(`[PP-Lorebook] No data URL for ${img.filename} in entry ${key} — skipping`);
-                    continue;
-                }
+            // Inject pre-resolved images right after this entry's text block
+            for (const img of images) {
                 try {
                     const label = (img.label || '').trim();
                     rebuilt.push({ type: 'text', text: label ? '\n' + label : '\n' });
                     rebuilt.push({
                         type: 'image_url',
-                        image_url: { url: base64Data, detail: quality },
+                        image_url: { url: img.dataUrl, detail: quality },
                     });
-                    injectedCount++;
-                    console.debug(`[PP-Lorebook] Injected image from entry ${key} (${injectedCount}/${maxTotal}), base64 len=${base64Data?.length || 0}`);
                 } catch (err) {
                     console.debug(`[PP-Lorebook] Failed to inject image from entry ${key}:`, err);
                 }
@@ -429,58 +344,17 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
         rebuilt.push(...nonTextBlocks);
 
         // Fallback: append images for entries whose text wasn't found
-        for (const { key, entry } of fallbackEntries) {
-            if (injectedCount >= maxTotal) break;
-            const images = getLorebookImages(entry.world || '', String(entry.uid));
-            if (!images || images.length === 0) continue;
-            const enabledImages = images.filter(img => img.enabled !== false);
-            if (enabledImages.length === 0) continue;
-            const remaining = maxTotal - injectedCount;
-            const toInject = enabledImages.slice(0, remaining);
-            if (toInject.length === 0) continue;
-
-            const wName = entry.world || '';
-            const uid = String(entry.uid);
-            const dataUrlByFilename = new Map();
-            const uncachedFilenames = [];
-            for (const img of toInject) {
-                const cacheKey = 'lb::' + wName + '::' + uid + '::' + img.filename;
-                const hit = getCached(cacheKey);
-                if (hit !== undefined) {
-                    dataUrlByFilename.set(img.filename, hit);
-                } else {
-                    uncachedFilenames.push(img.filename);
-                }
-            }
-
-            if (uncachedFilenames.length > 0) {
-                try {
-                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
-                    for (const [filename, dataUrl] of fresh) {
-                        const cacheKey = 'lb::' + wName + '::' + uid + '::' + filename;
-                        setCached(cacheKey, dataUrl);
-                        dataUrlByFilename.set(filename, dataUrl);
-                    }
-                } catch (err) {
-                    console.debug(`[PP-Lorebook] Fallback batch fetch failed for entry ${key}:`, err);
-                }
-            }
-
-            for (const img of toInject) {
-                const base64Data = dataUrlByFilename.get(img.filename);
-                if (!base64Data) {
-                    console.debug(`[PP-Lorebook] No data URL for ${img.filename} in fallback entry ${key} — skipping`);
-                    continue;
-                }
+        for (const item of fallbackEntries) {
+            const { key, images } = item;
+            if (!images || !images.length) continue;
+            for (const img of images) {
                 try {
                     const label = (img.label || '').trim();
                     rebuilt.push({ type: 'text', text: label ? '\n' + label : '\n' });
                     rebuilt.push({
                         type: 'image_url',
-                        image_url: { url: base64Data, detail: quality },
+                        image_url: { url: img.dataUrl, detail: quality },
                     });
-                    injectedCount++;
-                    console.debug(`[PP-Lorebook] Fallback-injected image from entry ${key} (${injectedCount}/${maxTotal}), base64 len=${base64Data?.length || 0}`);
                 } catch (err) {
                     console.debug(`[PP-Lorebook] Failed to inject fallback image from entry ${key}:`, err);
                 }
@@ -515,7 +389,6 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
     // ── Inject remaining positions into their correct system messages ─
     for (const [pos, entryList] of byPosition) {
         if (pos === 0 || pos === 1) continue; // already handled
-        if (injectedCount >= maxTotal) break;
 
         const target = (pos === 2 || pos === 3) ? anMsg
             : (pos === 5 || pos === 6) ? emMsg
@@ -527,16 +400,11 @@ export async function injectLorebookImages(chat, quality, s, getUserTarget) {
         await injectIntoSystemMsg(target, entryList);
     }
 
-    console.debug(`[PP-Lorebook] Injection complete — injected ${injectedCount} image(s) total`);
+    console.debug('[PP-Lorebook] Injection complete');
 }
 
 // ── Initialisation ─────────────────
 
-/**
- * Initialise the lorebook image injection pipeline.
- * Sets up event listeners for WORLD_INFO_ACTIVATED and CHAT_CHANGED.
- * Called from index.js activate().
- */
 /**
  * WORLD_INFO_ACTIVATED handler.
  * Receives entries, clears fetch cache, and rebuilds the active entry map.

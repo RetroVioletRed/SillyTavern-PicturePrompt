@@ -4,17 +4,16 @@
  * Estimates total token cost for all images that will be injected
  * on the next generation. Drives the "≈ N tokens" display in settings.
  *
+ * Reads from InjectionPlan (built by injection-plan.js) — no duplicate
+ * settings resolution or image fetching.
+ *
  * @module token-estimate
  */
 
-import { getContext } from '../../../../extensions.js';
-import { characters, this_chid, main_api, user_avatar } from '../../../../../script.js';
+import { main_api } from '../../../../../script.js';
 import { getImageSizeFromDataURL } from '../../../../utils.js';
-import { blobToDataURL, dbGetAll } from './storage.js';
-import { getSettings, getSourceQuality, getCharacterAvatarUrl, getPersonaAvatarUrl, getMetaForPersona } from './settings.js';
-import { getCharGalleryMeta, getCharGalleryFolder } from './gallery-images.js';
-import { getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached } from './lorebook-images.js';
-import { getActiveEntries } from './lorebook-inject.js';
+import { getSettings } from './settings.js';
+import { buildInjectionPlan } from './injection-plan.js';
 
 // ── Constants ─────────────────────────────
 
@@ -56,138 +55,59 @@ export async function estimateImageTokens(dataUrl, quality) {
 }
 
 /**
- * Estimate total tokens for all images that will be injected.
+ * Estimate total tokens from a pre-built InjectionPlan.
+ * Returns { total, imageCount, sources } for the UI and post-generation indicator.
  */
-export async function getTotalImageTokenEstimate() {
-    const s = getSettings();
+export async function getTotalImageTokenEstimate(plan) {
     let total = 0;
     let imageCount = 0;
     const sources = [];
 
     // Character avatar
-    if (s.injectChar) {
-        const url = getCharacterAvatarUrl();
-        if (url) {
-            const b64 = await urlToBase64(url);
-            if (b64) {
-                const q = getSourceQuality(s.qualityCharAvatar);
-                total += await estimateImageTokens(b64, q);
-                imageCount++;
-                sources.push({ name: 'Char', quality: s.qualityCharAvatar, position: s.positionCharAvatar || 'system' });
-            }
-        }
+    if (plan.char.enabled && plan.char.dataUrl) {
+        total += await estimateImageTokens(plan.char.dataUrl, plan.char.quality);
+        imageCount++;
+        sources.push({ name: 'Char', quality: plan.char.quality, position: plan.char.position });
     }
 
     // Persona avatar
-    if (s.injectPersona) {
-        const url = getPersonaAvatarUrl();
-        if (url) {
-            const b64 = await urlToBase64(url);
-            if (b64) {
-                const q = getSourceQuality(s.qualityPersonaAvatar);
-                total += await estimateImageTokens(b64, q);
-                imageCount++;
-                sources.push({ name: 'Persona', quality: s.qualityPersonaAvatar, position: s.positionPersonaAvatar || 'system' });
-            }
-        }
+    if (plan.persona.enabled && plan.persona.dataUrl) {
+        total += await estimateImageTokens(plan.persona.dataUrl, plan.persona.quality);
+        imageCount++;
+        sources.push({ name: 'Persona', quality: plan.persona.quality, position: plan.persona.position });
     }
 
     // Persona extra images
-    if (s.extraImagesEnabled && user_avatar) {
-        const extras = await getExtraImagesForInjection(user_avatar);
-        const maxCount = Number.isFinite(s.maxExtraImages) ? Math.max(0, s.maxExtraImages) : 8;
-        const capped = extras.slice(0, maxCount);
-        const q = getSourceQuality(s.qualityExtraImages);
-        for (const img of capped) {
-            total += await estimateImageTokens(img.dataUrl, q);
+    if (plan.extras.enabled && plan.extras.images.length) {
+        for (const img of plan.extras.images) {
+            total += await estimateImageTokens(img.dataUrl, plan.extras.quality);
             imageCount++;
         }
-        if (capped.length) sources.push({ name: 'Extras', quality: s.qualityExtraImages, position: s.positionExtraImages || 'system' });
+        sources.push({ name: 'Extras', quality: plan.extras.quality, position: plan.extras.position });
     }
 
     // Character gallery images
-    if (s.charExtraImagesEnabled) {
-        const chId = Number(this_chid);
-        if (chId >= 0 && characters?.[chId]?.avatar) {
-            const avatarId = characters[chId].avatar;
-            const meta = getCharGalleryMeta(avatarId);
-            const enabledFilenames = Object.entries(meta)
-                .filter(([, v]) => v.enabled)
-                .map(([k]) => k);
-            const maxCount = Number.isFinite(s.charExtraImagesMax) ? Math.max(0, s.charExtraImagesMax) : 8;
-            const toInject = enabledFilenames.slice(0, maxCount);
-            if (toInject.length > 0) {
-                const folder = getCharGalleryFolder();
-                if (folder) {
-                    const q = getSourceQuality(s.qualityGalleryImages);
-                    let galleryCount = 0;
-                    for (const filename of toInject) {
-                        const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
-                        const b64 = await urlToBase64(url);
-                        if (b64) {
-                            total += await estimateImageTokens(b64, q);
-                            imageCount++;
-                            galleryCount++;
-                        }
-                    }
-                    if (galleryCount) sources.push({ name: 'Gallery', quality: s.qualityGalleryImages, position: s.positionGalleryImages || 'system' });
-                }
-            }
+    if (plan.gallery.enabled && plan.gallery.images.length) {
+        for (const img of plan.gallery.images) {
+            total += await estimateImageTokens(img.dataUrl, plan.gallery.quality);
+            imageCount++;
         }
+        sources.push({ name: 'Gallery', quality: plan.gallery.quality, position: plan.gallery.position });
     }
 
     // Lorebook images
-    if (s.lorebookImagesEnabled) {
-        const lbSettings = getLorebookSettings();
-        const entries = await getActiveEntries();
-        let lbInjected = 0;
-        const lbMax = Number.isFinite(lbSettings.lorebookImagesMax) ? Math.max(0, lbSettings.lorebookImagesMax) : 4;
-        const q = getSourceQuality(s.qualityLorebookImages);
-        for (const [, entry] of entries) {
-            if (lbInjected >= lbMax) break;
-            const images = getLorebookImages(entry.world || '', String(entry.uid));
-            const enabledImages = images.filter(img => img.enabled !== false);
-            const wName = entry.world || '';
-            const uid = String(entry.uid);
-
-            const toInject = enabledImages.slice(0, lbMax - lbInjected);
-            if (!toInject.length) continue;
-
-            const dataUrlByFilename = new Map();
-            const uncachedFilenames = [];
-            for (const img of toInject) {
-                const key = 'lb::' + wName + '::' + uid + '::' + img.filename;
-                const hit = getCached(key);
-                if (hit !== undefined) {
-                    dataUrlByFilename.set(img.filename, hit);
-                } else {
-                    uncachedFilenames.push(img.filename);
-                }
-            }
-
-            if (uncachedFilenames.length > 0) {
+    if (plan.lorebook.enabled && plan.lorebook.entries.length) {
+        let lbCount = 0;
+        for (const { images } of plan.lorebook.entries) {
+            for (const img of images) {
                 try {
-                    const fresh = await getLorebookImagesDataUrls(wName, uid, uncachedFilenames);
-                    for (const [filename, dataUrl] of fresh) {
-                        const key = 'lb::' + wName + '::' + uid + '::' + filename;
-                        setCached(key, dataUrl);
-                        dataUrlByFilename.set(filename, dataUrl);
-                    }
-                } catch { /* skip batch failures */ }
-            }
-
-            for (const img of toInject) {
-                if (lbInjected >= lbMax) break;
-                const b64 = dataUrlByFilename.get(img.filename);
-                if (!b64) continue;
-                try {
-                    total += await estimateImageTokens(b64, q);
+                    total += await estimateImageTokens(img.dataUrl, plan.lorebook.quality);
                     imageCount++;
-                    lbInjected++;
+                    lbCount++;
                 } catch { /* skip individual token estimate failures */ }
             }
         }
-        if (lbInjected) sources.push({ name: 'Lorebook', quality: s.qualityLorebookImages, position: s.positionLorebookImages || 'system' });
+        if (lbCount) sources.push({ name: 'Lorebook', quality: plan.lorebook.quality, position: plan.lorebook.position });
     }
 
     return { total, imageCount, sources };
@@ -224,7 +144,8 @@ export async function refreshTokenEstimate() {
     _tokenEstimateRunning = true;
 
     try {
-        const est = await getTotalImageTokenEstimate();
+        const plan = await buildInjectionPlan();
+        const est = await getTotalImageTokenEstimate(plan);
 
         const $el2 = $('#picture_prompt_token_estimate');
         const $detail2 = $('#picture_prompt_token_breakdown');
@@ -264,60 +185,5 @@ export async function refreshTokenEstimate() {
             _tokenEstimatePending = false;
             refreshTokenEstimate();
         }
-    }
-}
-
-// ── Shared Image Fetching ─────────────────
-
-/**
- * Get extra images for a persona: reads metadata, fetches blobs,
- * converts to base64 data URLs. Result is cached so estimation
- * and injection share one fetch.
- */
-export async function getExtraImagesForInjection(avatarId) {
-    const cacheKey = 'extra::' + avatarId;
-    const cached = getCached(cacheKey);
-    if (cached !== undefined) return cached;
-
-    const metaList = getMetaForPersona(avatarId);
-    const enabledMeta = metaList.filter(m => m.enabled !== false);
-    if (!enabledMeta.length) return [];
-
-    const keys = enabledMeta.map(m => `${avatarId}::${m.filename}`);
-    const records = await dbGetAll(keys);
-
-    const dataUrls = await Promise.all(
-        records.map(r => r?.blob ? blobToDataURL(r.blob) : Promise.resolve(null))
-    );
-
-    const results = [];
-    for (let i = 0; i < enabledMeta.length; i++) {
-        if (dataUrls[i]) {
-            results.push({
-                filename: enabledMeta[i].filename,
-                dataUrl: dataUrls[i],
-                label: enabledMeta[i].label || '',
-            });
-        }
-    }
-    setCached(cacheKey, results);
-    return results;
-}
-
-/** Fetch an image URL (for avatars/gallery) and convert to base64. Cached. */
-export async function urlToBase64(url) {
-    const cacheKey = 'url::' + url;
-    const cached = getCached(cacheKey);
-    if (cached !== undefined) return cached;
-
-    try {
-        const response = await fetch(url, { cache: 'force-cache' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const dataUrl = await blobToDataURL(await response.blob());
-        if (dataUrl) setCached(cacheKey, dataUrl);
-        return dataUrl;
-    } catch (err) {
-        console.warn('[Picture Prompt] Failed to fetch image:', url, err);
-        return null;
     }
 }
