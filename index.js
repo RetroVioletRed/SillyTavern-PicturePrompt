@@ -13,6 +13,7 @@ import { getSettings, isGroupChat, getCharacterAvatarUrl, getPersonaAvatarUrl, a
 import { getCharGalleryMeta, observeGallery, disconnectGalleryObserver } from './modules/gallery-images.js';
 import { observePersonaPanel, onPersonaChanged, disconnectPersonaObserver } from './modules/persona-images.js';
 import { showCalculating, refreshTokenEstimate } from './modules/token-estimate.js';
+import { runTests } from './modules/pp-test.js';
 import { getExtraImagesForInjection } from './modules/injection-plan.js';
 import { onPromptReady } from './modules/prompt-injection.js';
 import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, getActiveEntries, deactivateLorebookInject } from './modules/lorebook-inject.js';
@@ -299,6 +300,11 @@ export async function activate() {
         callback: ppCacheCallback,
         helpString: 'Clear the image data URL cache',
     }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'pp-test',
+        callback: runTests,
+        helpString: 'Run diagnostic tests on the injection pipeline',
+    }));
 
     // ── Early-visible 'calculating...' hooks ─────────────────────
     // ST's event system fires late — these bridge the visual gap by
@@ -358,6 +364,7 @@ export async function deactivate() {
     delete SlashCommandParser.commands['pp-status'];
     delete SlashCommandParser.commands['pp-images'];
     delete SlashCommandParser.commands['pp-cache'];
+    delete SlashCommandParser.commands['pp-test'];
 
     console.debug('[Picture Prompt] Deactivated');
 }
