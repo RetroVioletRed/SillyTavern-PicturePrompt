@@ -16,7 +16,7 @@ import { showCalculating, refreshTokenEstimate } from './modules/token-estimate.
 import { runTests } from './modules/pp-test.js';
 import { getExtraImagesForInjection } from './modules/injection-plan.js';
 import { onPromptReady } from './modules/prompt-injection.js';
-import { initLorebookInject, injectLorebookImages, getCachedActiveEntries, getActiveEntries, deactivateLorebookInject } from './modules/lorebook-inject.js';
+import { initLorebookInject, getActiveEntries, deactivateLorebookInject } from './modules/lorebook-inject.js';
 import { initLorebookUI, deactivateLorebookUI } from './modules/lorebook-ui.js';
 import { getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached, clearFetchCache, enableGridDragReorder } from './modules/lorebook-images.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';

@@ -23,13 +23,12 @@ import { buildInjectionPlan } from './injection-plan.js';
 import {
     findMessageTarget,
     ensureContentBlocks,
-    getFirstTextBlock,
     getUserTarget,
     applyInjectionPlan,
 } from './injection-routing.js';
 
 // Re-export pure helpers for any callers that import from this module
-export { findMessageTarget, ensureContentBlocks, getFirstTextBlock, getUserTarget };
+export { findMessageTarget, ensureContentBlocks, getUserTarget };
 
 // ── ST Glue Layer ─────────────────────────
 
