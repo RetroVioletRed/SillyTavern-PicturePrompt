@@ -13,6 +13,7 @@
 import { main_api } from '../../../../../script.js';
 import { getImageSizeFromDataURL } from '../../../../utils.js';
 import { getSettings } from './settings.js';
+import { log } from './storage.js';
 import { buildInjectionPlan } from './injection-plan.js';
 
 // ── Constants ─────────────────────────────
@@ -172,7 +173,7 @@ export async function refreshTokenEstimate() {
             $detail2.text(detailParts.join(' · '));
         }
     } catch (err) {
-        console.warn('[Picture Prompt] Token estimate failed:', err);
+        log.warn('Token estimate failed:', err);
         const $el3 = $('#picture_prompt_token_estimate');
         const $detail3 = $('#picture_prompt_token_breakdown');
         if ($el3.length) {

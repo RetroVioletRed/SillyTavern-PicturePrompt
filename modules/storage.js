@@ -63,6 +63,20 @@ export function blobToDataURL(blob) {
     });
 }
 
+// ── Logging ──────────────────────────────
+// Session-only debug flag — flip via /pp-debug, resets to false on deactivate.
+// warn/error stay ungated (operational).
+let _debug = false;
+export const isDebug = () => _debug;
+export const setDebug = v => { _debug = !!v; };
+
+const TAG = '[Picture Prompt]';
+export const log = {
+    debug: (...a) => { if (_debug) console.debug(TAG, ...a); },
+    warn:  (...a) => console.warn(TAG, ...a),
+    error: (...a) => console.error(TAG, ...a),
+};
+
 /** Cached escape element (avoids allocating per call). */
 const _escapeDiv = document.createElement('div');
 

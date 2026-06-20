@@ -5,6 +5,7 @@ import {
 import {
     clearFetchCache,
 } from './lorebook-images.js';
+import { log } from './storage.js';
 import {
     getRegexedString,
     regex_placement,
@@ -85,13 +86,13 @@ async function ensureActiveEntriesCache() {
                 const key = `${worldName}.${entry.uid}`;
                 _activeEntries.set(key, entry);
             }
-            console.debug(`[PP-Lorebook] Proactively cached ${_activeEntries.size} active entries from checkWorldInfo`);
+            log.debug(`Lorebook: Proactively cached ${_activeEntries.size} active entries from checkWorldInfo`);
         }
     } catch (err) {
         if (err?.message === 'Timeout') {
-            console.debug('[PP-Lorebook] Proactive world info check timed out after ' + ENSURE_CACHE_TIMEOUT_MS + 'ms — cache left empty');
+            log.debug('Lorebook: Proactive world info check timed out after ' + ENSURE_CACHE_TIMEOUT_MS + 'ms — cache left empty');
         } else {
-            console.debug('[PP-Lorebook] Proactive world info check failed — cache left empty:', err);
+            log.debug('Lorebook: Proactive world info check failed — cache left empty:', err);
         }
     }
 }
@@ -121,17 +122,17 @@ export async function getActiveEntries() {
  */
 export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
     if (!lorebookPlan.enabled) {
-        console.debug('[PP-Lorebook] lorebookImagesEnabled is false — skipping injection');
+        log.debug('Lorebook: lorebookImagesEnabled is false — skipping injection');
         return;
     }
 
     if (!lorebookPlan.entries.length) {
-        console.debug('[PP-Lorebook] No active lorebook entries — skipping injection');
+        log.debug('Lorebook: No active lorebook entries — skipping injection');
         return;
     }
 
     if (!Array.isArray(chat) || chat.length === 0) {
-        console.debug('[PP-Lorebook] No chat array — skipping injection');
+        log.debug('Lorebook: No chat array — skipping injection');
         return;
     }
 
@@ -159,27 +160,27 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
     }
 
     if (systemMessages.length === 0) {
-        console.debug('[PP-Lorebook] No system messages in chat — skipping injection');
+        log.debug('Lorebook: No system messages in chat — skipping injection');
         return;
     }
 
-    console.debug(`[PP-Lorebook] Found ${systemMessages.length} system message(s)`);
+    log.debug(`Lorebook: Found ${systemMessages.length} system message(s)`);
 
     // ── User-position shortcut ─────────────────
     // When position is 'user', bypass all system-message routing and inject
     // all enabled lorebook images into the last user message.
     if (lorebookPlan.position === 'user') {
-        console.debug('[PP-Lorebook] User-position mode — injecting all lorebook images into last user message');
+        log.debug('Lorebook: User-position mode — injecting all lorebook images into last user message');
 
         const userMsg = getUserTarget(chat);
         if (!userMsg) {
-            console.debug('[PP-Lorebook] No user message found — falling back to system-position routing');
+            log.debug('Lorebook: No user message found — falling back to system-position routing');
         } else {
             if (typeof userMsg.content === 'string') {
                 userMsg.content = [{ type: 'text', text: userMsg.content }];
             }
             if (!Array.isArray(userMsg.content)) {
-                console.debug('[PP-Lorebook] Cannot inject — user message content is not an array');
+                log.debug('Lorebook: Cannot inject — user message content is not an array');
                 return;
             }
 
@@ -197,7 +198,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
                     injectedCount++;
                 }
             }
-            console.debug(`[PP-Lorebook] User-position mode — injected ${injectedCount} image(s)`);
+            log.debug(`Lorebook: User-position mode — injected ${injectedCount} image(s)`);
             return;
         }
     }
@@ -220,7 +221,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
             break;
         }
     }
-    console.debug(`[PP-Lorebook] Author's Note msg: ${anMsg ? 'found' : 'not found'}, Example Msgs: ${emMsg ? 'found' : 'not found'}`);
+    log.debug(`Lorebook: Author's Note msg: ${anMsg ? 'found' : 'not found'}, Example Msgs: ${emMsg ? 'found' : 'not found'}`);
 
     // ── Find which system messages hold worldInfoBefore / worldInfoAfter ─
     // ST's populateChatCompletion inserts 'main' between them, so we search
@@ -260,7 +261,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
             targetMsg.content = [{ type: 'text', text: targetMsg.content }];
         }
         if (!Array.isArray(targetMsg.content)) {
-            console.debug('[PP-Lorebook] Cannot inject — message content is neither string nor array');
+            log.debug('Lorebook: Cannot inject — message content is neither string nor array');
             return;
         }
 
@@ -276,7 +277,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
         }
 
         if (!fullText) {
-            console.debug('[PP-Lorebook] No text content in system message — skipping injection');
+            log.debug('Lorebook: No text content in system message — skipping injection');
             return;
         }
 
@@ -303,7 +304,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
             // Find the resolved entry text in the full text from current position
             const foundIdx = fullText.indexOf(resolvedContent, pos);
             if (foundIdx === -1) {
-                console.debug(`[PP-Lorebook] Entry ${key} text not found in system message — falling back to append`);
+                log.debug(`Lorebook: Entry ${key} text not found in system message — falling back to append`);
                 fallbackEntries.push(item);
                 continue;
             }
@@ -330,7 +331,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
                         image_url: { url: img.dataUrl, detail: quality },
                     });
                 } catch (err) {
-                    console.debug(`[PP-Lorebook] Failed to inject image from entry ${key}:`, err);
+                    log.debug(`Lorebook: Failed to inject image from entry ${key}:`, err);
                 }
             }
         }
@@ -356,7 +357,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
                         image_url: { url: img.dataUrl, detail: quality },
                     });
                 } catch (err) {
-                    console.debug(`[PP-Lorebook] Failed to inject fallback image from entry ${key}:`, err);
+                    log.debug(`Lorebook: Failed to inject fallback image from entry ${key}:`, err);
                 }
             }
         }
@@ -369,7 +370,7 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
         .sort((a, b) => (a.entry.order || 100) - (b.entry.order || 100));
     wiBeforeMsg = findWorldInfoMessage(beforeEntries) || wiBeforeMsg;
     if (beforeEntries.length > 0) {
-        console.debug(`[PP-Lorebook] Injecting ${beforeEntries.length} position=0 entries into worldInfoBefore system message`);
+        log.debug(`Lorebook: Injecting ${beforeEntries.length} position=0 entries into worldInfoBefore system message`);
         await injectIntoSystemMsg(wiBeforeMsg, beforeEntries);
     }
 
@@ -378,11 +379,11 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
         .sort((a, b) => (a.entry.order || 100) - (b.entry.order || 100));
     wiAfterMsg = findWorldInfoMessage(afterEntries) || wiAfterMsg;
     if (afterEntries.length > 0 && wiAfterMsg && wiAfterMsg !== wiBeforeMsg) {
-        console.debug(`[PP-Lorebook] Injecting ${afterEntries.length} position=1 entries into worldInfoAfter system message`);
+        log.debug(`Lorebook: Injecting ${afterEntries.length} position=1 entries into worldInfoAfter system message`);
         await injectIntoSystemMsg(wiAfterMsg, afterEntries);
     } else if (afterEntries.length > 0) {
         // Fallback: only one system message — inject all into it
-        console.debug(`[PP-Lorebook] Only one system message — injecting position=1 entries into it as well`);
+        log.debug(`Lorebook: Only one system message — injecting position=1 entries into it as well`);
         await injectIntoSystemMsg(wiBeforeMsg, afterEntries);
     }
 
@@ -396,11 +397,11 @@ export async function injectLorebookImages(chat, lorebookPlan, getUserTarget) {
         if (!target) continue;
 
         const label = pos === 2 ? 'ANTop' : pos === 3 ? 'ANBottom' : pos === 5 ? 'EMTop' : pos === 6 ? 'EMBottom' : `pos=${pos}`;
-        console.debug(`[PP-Lorebook] Injecting ${entryList.length} ${label} entries into ${target === anMsg ? "Author's Note" : target === emMsg ? 'Example Messages' : 'worldInfoBefore'} system message`);
+        log.debug(`Lorebook: Injecting ${entryList.length} ${label} entries into ${target === anMsg ? "Author's Note" : target === emMsg ? 'Example Messages' : 'worldInfoBefore'} system message`);
         await injectIntoSystemMsg(target, entryList);
     }
 
-    console.debug('[PP-Lorebook] Injection complete');
+    log.debug('Lorebook: Injection complete');
 }
 
 // ── Initialisation ─────────────────
@@ -413,7 +414,7 @@ function _onWorldInfoActivated(entries) {
     clearFetchCache();
     try {
         if (!Array.isArray(entries) || entries.length === 0) {
-            console.debug('[PP-Lorebook] WORLD_INFO_ACTIVATED — no entries received');
+            log.debug('Lorebook: WORLD_INFO_ACTIVATED — no entries received');
             _activeEntries.clear();
             return;
         }
@@ -426,9 +427,9 @@ function _onWorldInfoActivated(entries) {
             _activeEntries.set(key, entry);
         }
 
-        console.debug(`[PP-Lorebook] Cached ${_activeEntries.size} active lorebook entries from WORLD_INFO_ACTIVATED`);
+        log.debug(`Lorebook: Cached ${_activeEntries.size} active lorebook entries from WORLD_INFO_ACTIVATED`);
     } catch (err) {
-        console.debug('[PP-Lorebook] Error processing WORLD_INFO_ACTIVATED:', err);
+        log.debug('Lorebook: Error processing WORLD_INFO_ACTIVATED:', err);
         _activeEntries.clear();
     }
 }
@@ -438,7 +439,7 @@ function _onWorldInfoActivated(entries) {
  * Clears cached entries because world info context changes with the chat.
  */
 function _onLorebookChatChanged() {
-    console.debug('[PP-Lorebook] CHAT_CHANGED — clearing lorebook entry cache');
+    log.debug('Lorebook: CHAT_CHANGED — clearing lorebook entry cache');
     _activeEntries.clear();
 }
 
@@ -448,12 +449,12 @@ function _onLorebookChatChanged() {
  * Called from index.js activate().
  */
 export function initLorebookInject() {
-    console.debug('[PP-Lorebook] Initialising lorebook image injection pipeline');
+    log.debug('Lorebook: Initialising lorebook image injection pipeline');
 
     eventSource.on(event_types.WORLD_INFO_ACTIVATED, _onWorldInfoActivated);
     eventSource.on(event_types.CHAT_CHANGED, _onLorebookChatChanged);
 
-    console.debug('[PP-Lorebook] Lorebook image injection pipeline initialised');
+    log.debug('Lorebook: Lorebook image injection pipeline initialised');
 }
 
 /**
@@ -464,5 +465,5 @@ export function deactivateLorebookInject() {
     eventSource.removeListener(event_types.WORLD_INFO_ACTIVATED, _onWorldInfoActivated);
     eventSource.removeListener(event_types.CHAT_CHANGED, _onLorebookChatChanged);
     _activeEntries.clear();
-    console.debug('[PP-Lorebook] Lorebook image injection pipeline deactivated');
+    log.debug('Lorebook: Lorebook image injection pipeline deactivated');
 }

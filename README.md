@@ -4,9 +4,13 @@ Let your [SillyTavern](https://github.com/SillyTavern/SillyTavern) characters **
 
 Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ollama, vLLM, KoboldCpp, Featherless, NanoGPT etc.
 
+[![SillyTavern](https://img.shields.io/badge/SillyTavern-1.14%2B-6e5494)](https://github.com/SillyTavern/SillyTavern)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/RetroVioletRed/SillyTavern-PicturePrompt?style=flat&color=F1C40F)](https://github.com/RetroVioletRed/SillyTavern-PicturePrompt/stargazers)
+
 ## Who it's for
 
-Anyone using SillyTavern with a vision model who wants richer, more consistent scene/character understanding. Especially useful for detailed world-building, consistent character appearance, or "show, don't tell" prompting. For someone who want to elevate the multimodal experience significantly with minimal overhead.
+Anyone using SillyTavern with a vision model who wants richer, more consistent scene/character understanding. Especially useful for detailed world-building, consistent character appearance, or "show, don't tell" prompting.
 
 ---
 
@@ -16,7 +20,7 @@ Anyone using SillyTavern with a vision model who wants richer, more consistent s
 - **Extra images per persona**: Upload reference images for your personas, they pass alongside the avatar
 - **Gallery images injection**: Inject gallery images to the prompt, use them as extra images for character, items and scene references
 - **Lorebook entry images**: Attach images to Lorebook entries, they pass alongside entry text; solid for NPCs, places and artifacts
-- **Per-image on/off toggle**: Enable or disable individual images without deleting them, store as many as you want
+- **Fully local and offline**: Images are stored in your browser and never leave your machine if you are using a local model
 - **Custom labels**: Attach a text hint to each image; it helps to steer the model and get the best results
 - **Token estimation**: The extension shows you token cost overhead in settings before generation
 - **Per-source quality override**: Different quality per source (avatars, extras, gallery, lorebook) to balance detail and token cost

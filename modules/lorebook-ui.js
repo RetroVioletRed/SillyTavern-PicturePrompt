@@ -9,7 +9,7 @@
  */
 
 import { SEL } from './selectors.js';
-import { escapeHtml } from './storage.js';
+import { escapeHtml, log } from './storage.js';
 import {
     getLorebookImage,
     putLorebookImage,
@@ -75,7 +75,7 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
     if ($grid.length) {
         $grid.show();
     } else {
-        console.debug('[PP-Lorebook] Grid element not found, cannot render');
+        log.debug('Lorebook: Grid element not found, cannot render');
         return;
     }
 
@@ -187,18 +187,18 @@ export function renderLorebookImageGrid(container, worldName, entryUid, images) 
 export function injectLorebookSection(outlet, worldName, entryUid) {
     const $outlet = $(outlet);
     if (!$outlet.length) {
-        console.debug('[PP-Lorebook] No outlet to inject into');
+        log.debug('Lorebook: No outlet to inject into');
         return;
     }
 
     // Don't inject twice
     if ($outlet.find('.pp-lorebook-images').length) {
-        console.debug('[PP-Lorebook] Section already injected for this outlet, refreshing');
+        log.debug('Lorebook: Section already injected for this outlet, refreshing');
         refreshLorebookSection(worldName, entryUid);
         return;
     }
 
-    console.debug('[PP-Lorebook] Injecting lorebook image section for entry', entryUid, 'world', worldName);
+    log.debug('Lorebook: Injecting lorebook image section for entry', entryUid, 'world', worldName);
 
     const sectionHtml = `
         <div class="pp-lorebook-images" data-entry-uid="${escapeHtml(String(entryUid))}" data-world-name="${escapeHtml(worldName)}">
@@ -269,7 +269,7 @@ export function injectLorebookSection(outlet, worldName, entryUid) {
 export function refreshLorebookSection(worldName, entryUid) {
     const $section = $(`.pp-lorebook-images[data-entry-uid="${escapeHtml(String(entryUid))}"][data-world-name="${escapeHtml(worldName)}"]`);
     if (!$section.length) {
-        console.debug('[PP-Lorebook] refresh: section NOT FOUND for entryUid=', entryUid, 'worldName=', worldName);
+        log.debug('Lorebook: refresh: section NOT FOUND for entryUid=', entryUid, 'worldName=', worldName);
         return;
     }
 
@@ -278,12 +278,12 @@ export function refreshLorebookSection(worldName, entryUid) {
     const $empty = $content.find('.pp-lorebook-empty');
 
     if (!$grid.length) {
-        console.debug('[PP-Lorebook] Grid element not found in section');
+        log.debug('Lorebook: Grid element not found in section');
         return;
     }
 
     const metaList = getLorebookImages(worldName, entryUid);
-    console.debug('[PP-Lorebook] refresh: worldName=', worldName, 'entryUid=', entryUid, 'images count:', metaList.length);
+    log.debug('Lorebook: refresh: worldName=', worldName, 'entryUid=', entryUid, 'images count:', metaList.length);
 
     if (metaList.length === 0) {
         if ($grid.length) $grid.empty().hide();
@@ -322,7 +322,7 @@ async function loadImagesForGrid(worldName, entryUid, metaList) {
     if ($empty.length) $empty.hide();
 
     try {
-        console.debug('[PP-Lorebook] loadImagesForGrid: looking up', metaList.length, 'images for', worldName, entryUid);
+        log.debug('Lorebook: loadImagesForGrid: looking up', metaList.length, 'images for', worldName, entryUid);
         const images = [];
         for (const meta of metaList) {
             const entry = await getLorebookImage(worldName, entryUid, meta.filename);
@@ -330,7 +330,7 @@ async function loadImagesForGrid(worldName, entryUid, metaList) {
                 const objUrl = URL.createObjectURL(entry.blob);
                 images.push({ ...meta, objectUrl: objUrl });
             } else {
-                console.debug('[PP-Lorebook] Blob not found for', `${worldName}::${entryUid}::${meta.filename}`);
+                log.debug('Lorebook: Blob not found for', `${worldName}::${entryUid}::${meta.filename}`);
             }
         }
 
@@ -341,7 +341,7 @@ async function loadImagesForGrid(worldName, entryUid, metaList) {
             if ($empty.length) $empty.show();
         }
     } catch (err) {
-        console.error('[PP-Lorebook] Failed to load images:', err);
+        log.error('Lorebook: Failed to load images:', err);
         $grid.html('<span style="font-size:0.85em; color: #e55;">Failed to load images</span>');
     }
 }
@@ -388,7 +388,7 @@ async function uploadLorebookImage(worldName, entryUid, file) {
         toastr.success(`Uploaded "${filename}"`);
         refreshLorebookSection(worldName, entryUid);
     } catch (err) {
-        console.error('[PP-Lorebook] Upload failed:', err);
+        log.error('Lorebook: Upload failed:', err);
         toastr.error('Upload failed. Check console for details.');
     }
 }
@@ -418,7 +418,7 @@ async function deleteLorebookImage(worldName, entryUid, filename) {
         toastr.success('Image deleted');
         refreshLorebookSection(worldName, entryUid);
     } catch (err) {
-        console.error('[PP-Lorebook] Delete failed:', err);
+        log.error('Lorebook: Delete failed:', err);
         toastr.error('Delete failed. Check console for details.');
     }
 }
@@ -444,10 +444,10 @@ function resolveEntryUid($worldEntry) {
     const uidText = $worldEntry.find('.world_entry_form_uid_value').text().trim();
     const uidMatch = uidText.match(/UID:\s*(\d+)/i);
     if (uidMatch) {
-        console.warn('[PP-Lorebook] UID extracted via regex fallback — ST DOM may have changed', uidMatch[1]);
+        log.warn('Lorebook: UID extracted via regex fallback — ST DOM may have changed', uidMatch[1]);
         return uidMatch[1];
     }
-    console.debug('[PP-Lorebook] Could not extract UID from world entry');
+    log.debug('Lorebook: Could not extract UID from world entry');
     return null;
 }
 
@@ -459,13 +459,13 @@ export function initLorebookUI(_retries = 0) {
     if (_lorebookObserver) return;
 
     if (!document.querySelector(SEL.worldPopupEntriesList)) {
-        if (_retries === 0) console.debug('[PP-Lorebook] World info panel not yet in DOM, retrying');
+        if (_retries === 0) log.debug('Lorebook: World info panel not yet in DOM, retrying');
         if (_retries < 30) setTimeout(() => initLorebookUI(_retries + 1), 2000);
-        else console.debug('[PP-Lorebook] Giving up on world info panel after 60s');
+        else log.debug('Lorebook: Giving up on world info panel after 60s');
         return;
     }
 
-    console.debug('[PP-Lorebook] Initializing lorebook UI observer');
+    log.debug('Lorebook: Initializing lorebook UI observer');
 
     _lorebookObserver = new MutationObserver(function (mutations) {
         for (const m of mutations) {
@@ -483,7 +483,7 @@ export function initLorebookUI(_retries = 0) {
                     const $outlet = $(this);
                     const $worldEntry = $outlet.closest(SEL.worldEntry);
                     if (!$worldEntry.length) {
-                        console.debug('[PP-Lorebook] Found outlet not inside a .world_entry, skipping');
+                        log.debug('Lorebook: Found outlet not inside a .world_entry, skipping');
                         return;
                     }
 
@@ -539,7 +539,7 @@ function scanExistingEditors() {
 function injectIfReady($outlet, entryUid) {
     const worldName = getActiveWorldName();
     if (!worldName) {
-        console.debug('[PP-Lorebook] No active world name found, cannot inject');
+        log.debug('Lorebook: No active world name found, cannot inject');
         return;
     }
 

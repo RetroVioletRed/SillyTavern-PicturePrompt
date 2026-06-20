@@ -12,7 +12,7 @@ import { getContext } from '../../../../extensions.js';
 import { user_avatar } from '../../../../../script.js';
 import { power_user } from '../../../../power-user.js';
 import { SEL } from './selectors.js';
-import { escapeHtml, dbPut, dbGet, dbDelete } from './storage.js';
+import { escapeHtml, dbPut, dbGet, dbDelete, log } from './storage.js';
 import { getSettings, getMetaForPersona, setMetaForPersona } from './settings.js';
 import { clearFetchCache, enableGridDragReorder } from './lorebook-images.js';
 
@@ -149,7 +149,7 @@ export async function loadPersonaImagesForPanel(avatarId) {
             $empty.show().text('No extra images for this persona yet.');
         }
     } catch (err) {
-        console.error('[Picture Prompt] Failed to load images:', err);
+        log.error('Failed to load images:', err);
         $grid.html('<span style="font-size:0.85em; color: #e55;">Failed to load images</span>');
     }
 }
@@ -335,7 +335,7 @@ async function uploadExtraImages(avatarId, files) {
         toastr.success(`Uploaded ${filesToUpload.length} image(s)`);
         loadPersonaImagesForPanel(avatarId);
     } catch (err) {
-        console.error('[Picture Prompt] Upload failed:', err);
+        log.error('Upload failed:', err);
         toastr.error('Upload failed. Check console for details.');
     }
 }
@@ -351,7 +351,7 @@ async function deleteExtraImage(avatarId, filename) {
         toastr.success('Image deleted');
         loadPersonaImagesForPanel(avatarId);
     } catch (err) {
-        console.error('[Picture Prompt] Delete failed:', err);
+        log.error('Delete failed:', err);
         toastr.error('Delete failed. Check console for details.');
     }
 }

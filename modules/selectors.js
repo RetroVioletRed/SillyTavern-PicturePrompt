@@ -6,6 +6,8 @@
  * missing elements with a single actionable warning.
  */
 
+import { log } from './storage.js';
+
 export const SEL = {
     // ── ST panels & containers ──
     dragGallery:              '#dragGallery',
@@ -50,7 +52,7 @@ export const SEL = {
 export function checkPresent(selector, label) {
     const el = document.querySelector(selector);
     if (!el) {
-        console.warn(`[PP] DOM element not found: ${label || selector} ("${selector}")`);
+        log.warn(`DOM element not found: ${label || selector} ("${selector}")`);
     }
     return el;
 }

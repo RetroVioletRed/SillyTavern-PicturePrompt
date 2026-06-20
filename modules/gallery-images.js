@@ -10,7 +10,7 @@
 import { getContext } from '../../../../extensions.js';
 import { characters, this_chid } from '../../../../../script.js';
 import { SEL } from './selectors.js';
-import { escapeHtml } from './storage.js';
+import { escapeHtml, log } from './storage.js';
 import { moduleName, getSettings } from './settings.js';
 
 // ── Module State ──────────────────────────
@@ -260,7 +260,7 @@ export function onGalleryClosed() {
 }
 
 export function onGalleryOpened() {
-    console.debug('[Picture Prompt] Gallery opened — injecting inject mode button');
+    log.debug('Gallery opened — injecting inject mode button');
 
     setTimeout(() => {
         injectInjectButtonIntoGallery();

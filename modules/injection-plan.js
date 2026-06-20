@@ -10,7 +10,7 @@
  */
 
 import { characters, this_chid, user_avatar } from '../../../../../script.js';
-import { blobToDataURL, dbGetAll } from './storage.js';
+import { blobToDataURL, dbGetAll, log } from './storage.js';
 import { getSettings, getSourceQuality, getCharacterAvatarUrl, getPersonaAvatarUrl, getMetaForPersona, isGroupChat } from './settings.js';
 import { getCharGalleryMeta, getCharGalleryFolder } from './gallery-images.js';
 import { getLorebookSettings, getLorebookImages, getLorebookImagesDataUrls, getCached, setCached } from './lorebook-images.js';
@@ -33,7 +33,7 @@ export async function urlToBase64(url) {
         if (dataUrl) setCached(cacheKey, dataUrl);
         return dataUrl;
     } catch (err) {
-        console.warn('[Picture Prompt] Failed to fetch image:', url, err);
+        log.warn('Failed to fetch image:', url, err);
         return null;
     }
 }

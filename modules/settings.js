@@ -17,7 +17,7 @@ import {
     user_avatar,
 } from '../../../../../script.js';
 import { oai_settings } from '../../../../openai.js';
-import { dbGetAll } from './storage.js';
+import { dbGetAll, log } from './storage.js';
 
 // ── Module Constants ──────────────────────
 
@@ -109,7 +109,7 @@ export function migrateOldSettings() {
     const old = context.extensionSettings?.['avatar_inject'];
     if (!old) return;
 
-    console.debug('[Picture Prompt] Migrating settings from avatar_inject');
+    log.debug('Migrating settings from avatar_inject');
     const migrated = { ...defaultSettings };
     for (const key of Object.keys(defaultSettings)) {
         if (old[key] !== undefined) migrated[key] = old[key];
@@ -302,7 +302,7 @@ export async function addSettingsUI() {
         applySettingsToUI();
         registerSettingsListeners();
     } catch (err) {
-        console.warn('[Picture Prompt] Settings panel unavailable — template not found', err);
+        log.warn('Settings panel unavailable — template not found', err);
         toastr.warning('Settings panel unavailable. Try reinstalling the extension.', 'Picture Prompt');
     }
 }
@@ -359,7 +359,7 @@ export async function pruneOrphanedPersonaImages() {
         if (clean.length !== metaList.length) {
             all[avatarId] = clean;
             changed = true;
-            console.debug(`[Picture Prompt] Pruned ${metaList.length - clean.length} orphan(s) from persona "${avatarId}"`);
+            log.debug(`Pruned ${metaList.length - clean.length} orphan(s) from persona "${avatarId}"`);
         }
     }
     if (changed) {

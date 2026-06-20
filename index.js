@@ -8,7 +8,7 @@ import {
     user_avatar,
 } from '../../../../script.js';
 import { SEL } from './modules/selectors.js';
-import { escapeHtml } from './modules/storage.js';
+import { escapeHtml, log, isDebug, setDebug } from './modules/storage.js';
 import { getSettings, isGroupChat, getCharacterAvatarUrl, getPersonaAvatarUrl, addSettingsUI, getMetaForPersona, setMetaForPersona, pruneOrphanedPersonaImages } from './modules/settings.js';
 import { getCharGalleryMeta, observeGallery, disconnectGalleryObserver } from './modules/gallery-images.js';
 import { observePersonaPanel, onPersonaChanged, disconnectPersonaObserver } from './modules/persona-images.js';
@@ -67,7 +67,7 @@ function startPanelWatchers() {
             tryInitPersona();
             if (galleryDone && personaDone) { obs.disconnect(); return; }
             if (++retries < 15) setTimeout(retry, 2000);
-            else { obs.disconnect(); console.debug('[Picture Prompt] Watchers timed out'); }
+            else { obs.disconnect(); log.debug('Watchers timed out'); }
         };
         setTimeout(retry, 2000);
     }
@@ -108,6 +108,15 @@ function _onChatBlockClick(e) {
 function _onPersonaChanged(avatarId) {
     onPersonaChanged(avatarId);
     refreshTokenEstimate();
+}
+
+async function ppDebugCallback(_namedArgs, unnamedArg) {
+    const arg = String(unnamedArg ?? '').trim().toLowerCase();
+    if (arg === 'on') setDebug(true);
+    else if (arg === 'off') setDebug(false);
+    else setDebug(!isDebug());
+    Popup.show.text('Picture Prompt', `Debug logging: ${isDebug() ? 'ON' : 'OFF'}`);
+    return '';
 }
 
 // ── Slash Commands ─────────────────
@@ -305,6 +314,11 @@ export async function activate() {
         callback: runTests,
         helpString: 'Run diagnostic tests on the injection pipeline',
     }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'pp-debug',
+        callback: ppDebugCallback,
+        helpString: 'Toggle Picture Prompt debug logging (on|off, or bare to toggle)',
+    }));
 
     // ── Early-visible 'calculating...' hooks ─────────────────────
     // ST's event system fires late — these bridge the visual gap by
@@ -328,7 +342,7 @@ export async function activate() {
         setTimeout(tryObservePersona, 100);
     }
 
-    console.debug('[Picture Prompt] Activated');
+    log.debug('Activated');
     refreshTokenEstimate();
 }
 
@@ -365,6 +379,9 @@ export async function deactivate() {
     delete SlashCommandParser.commands['pp-images'];
     delete SlashCommandParser.commands['pp-cache'];
     delete SlashCommandParser.commands['pp-test'];
+    delete SlashCommandParser.commands['pp-debug'];
 
-    console.debug('[Picture Prompt] Deactivated');
+    setDebug(false);
+
+    log.debug('Deactivated');
 }
