@@ -39,6 +39,25 @@ export async function urlToBase64(url) {
 }
 
 /**
+ * Run async tasks with a concurrency limit.
+ * @param {number} concurrency
+ * @param {(() => Promise<any>)[]} tasks
+ * @returns {Promise<any[]>}
+ */
+async function poolAsync(concurrency, tasks) {
+    const results = new Array(tasks.length);
+    const queue = tasks.map((task, i) => ({ task, i }));
+    const worker = async () => {
+        while (queue.length) {
+            const { task, i } = queue.shift();
+            results[i] = await task();
+        }
+    };
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    return results;
+}
+
+/**
  * Get extra images for a persona: reads metadata, fetches blobs,
  * converts to base64 data URLs. Result is cached so estimation
  * and injection share one fetch.
@@ -152,17 +171,11 @@ export async function buildInjectionPlan() {
                 const folder = getCharGalleryFolder();
                 if (folder) {
                     const toFetch = enabledFilenames.slice(0, plan.gallery.maxCount);
-                    const results = await Promise.all(
-                        toFetch.map(async (filename) => {
-                            const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
-                            const dataUrl = await urlToBase64(url);
-                            return dataUrl ? {
-                                filename,
-                                dataUrl,
-                                label: meta[filename]?.label || '',
-                            } : null;
-                        })
-                    );
+                    const tasks = toFetch.map((filename) => () => {
+                        const url = `/user/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
+                        return urlToBase64(url).then(dataUrl => dataUrl ? { filename, dataUrl, label: meta[filename]?.label || '' } : null);
+                    });
+                    const results = await poolAsync(4, tasks);
                     plan.gallery.images = results.filter(Boolean);
                 }
             }
