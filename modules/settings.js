@@ -16,7 +16,7 @@ import {
     main_api,
     user_avatar,
 } from '../../../../../script.js';
-import { oai_settings } from '../../../../openai.js';
+import { oai_settings, isImageInliningSupported as stImageInliningSupported } from '../../../../openai.js';
 import { dbGetAll, log } from './storage.js';
 
 // ── Module Constants ──────────────────────
@@ -61,15 +61,11 @@ export function warnOnce(key, message) {
 // ── Vision Check ──────────────────────────
 
 export function isImageInliningSupported() {
-    if (main_api !== 'openai') {
-        warnOnce('api', 'Picture Prompt only works with Chat Completion APIs. Switch to an OpenAI-compatible API (OpenRouter, Ollama, vLLM, etc.)');
-        return false;
+    const supported = stImageInliningSupported();
+    if (!supported) {
+        warnOnce('api', 'Picture Prompt cannot inject images — the current API/model does not support inline media, or media inlining is disabled in AI Response settings.');
     }
-    if (!oai_settings?.media_inlining) {
-        warnOnce('inlining', 'Inline image media is disabled in AI Response settings. Enable it for Picture Prompt to work.');
-        return false;
-    }
-    return true;
+    return supported;
 }
 
 // ── Avatar / Chat Helpers ─────────────────

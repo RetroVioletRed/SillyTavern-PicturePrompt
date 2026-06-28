@@ -1,12 +1,8 @@
-# Picture Prompt
+# Picture Prompt [![SillyTavern](https://img.shields.io/badge/SillyTavern-1.14%2B-6e5494)](https://github.com/SillyTavern/SillyTavern) [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 
 Let your [SillyTavern](https://github.com/SillyTavern/SillyTavern) characters **see** the world you're building. Picture Prompt gives your multimodal LLM a visual reference — how your character looks, how your persona looks, and a bunch of extra images for the scene.
 
 Works with any vision-capable model behind a Chat Completion API: OpenRouter, Ollama, vLLM, KoboldCpp, Featherless, NanoGPT etc.
-
-[![SillyTavern](https://img.shields.io/badge/SillyTavern-1.14%2B-6e5494)](https://github.com/SillyTavern/SillyTavern)
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/RetroVioletRed/SillyTavern-PicturePrompt?style=flat&color=F1C40F)](https://github.com/RetroVioletRed/SillyTavern-PicturePrompt/stargazers)
 
 ## Who it's for
 
