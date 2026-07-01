@@ -172,10 +172,9 @@ export async function listLorebookImages(worldName, entryUid) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).getAll();
-        req.onsuccess = () => {
-            resolve((req.result || []).filter(record => record.id.startsWith(prefix)));
-        };
+        const range = IDBKeyRange.bound(prefix, prefix + '\uffff');
+        const req = tx.objectStore(STORE_NAME).getAll(range);
+        req.onsuccess = () => resolve(req.result || []);
         req.onerror = () => reject(req.error);
     });
 }

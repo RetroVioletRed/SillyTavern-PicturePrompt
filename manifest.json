@@ -1,6 +1,6 @@
 {
     "display_name": "Picture Prompt",
-    "version": "1.5.1",
+    "version": "1.5.2",
     "description": "Inject images with custom labels into your prompt for multimodal LLMs — avatars, reference art, location shots, anything",
     "author": "RetroVioletRed",
     "js": "index.js",

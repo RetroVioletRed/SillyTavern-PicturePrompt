@@ -161,13 +161,9 @@ export async function dbListForPersona(avatarId) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).getAll();
-        req.onsuccess = () => {
-            const prefix = `${avatarId}::`;
-            resolve((req.result || [])
-                .filter(e => e.id.startsWith(prefix))
-                .map(e => e.id));
-        };
+        const range = IDBKeyRange.bound(`${avatarId}::`, `${avatarId}::\uffff`);
+        const req = tx.objectStore(STORE_NAME).getAll(range);
+        req.onsuccess = () => resolve((req.result || []).map(e => e.id));
         req.onerror = () => reject(req.error);
     });
 }
