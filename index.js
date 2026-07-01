@@ -381,6 +381,11 @@ export async function deactivate() {
     delete SlashCommandParser.commands['pp-test'];
     delete SlashCommandParser.commands['pp-debug'];
 
+    // ── Blob URL cleanup (safety net for any drawers closed without re-render) ──
+    $('img[src^="blob:"]').each(function () {
+        URL.revokeObjectURL(this.src);
+    });
+
     setDebug(false);
 
     log.debug('Deactivated');

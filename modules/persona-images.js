@@ -46,6 +46,11 @@ function checkAndRender() {
     if (!$content.length) return;
     if ($content.hasClass('openDrawer')) {
         renderIfPanelOpen();
+    } else {
+        // Revoke blob URLs when drawer closes (ST removes grid DOM without re-render)
+        $('#pp_extra_images_grid').find('img[src^="blob:"]').each(function () {
+            URL.revokeObjectURL(this.src);
+        });
     }
 }
 

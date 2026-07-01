@@ -502,6 +502,19 @@ export function initLorebookUI(_retries = 0) {
                     injectIfReady($outlet, uid);
                 });
             }
+
+            // Revoke blob URLs when lorebook drawers close (grid DOM removed without re-render)
+            for (const node of m.removedNodes) {
+                if (!(node instanceof Element)) continue;
+                $(node).find('.pp-lorebook-grid img[src^="blob:"]').each(function () {
+                    URL.revokeObjectURL(this.src);
+                });
+                if (node.matches?.('.pp-lorebook-grid')) {
+                    $(node).find('img[src^="blob:"]').each(function () {
+                        URL.revokeObjectURL(this.src);
+                    });
+                }
+            }
         }
     });
 
