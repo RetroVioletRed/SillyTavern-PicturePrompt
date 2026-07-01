@@ -10,6 +10,8 @@
 
 import { SEL } from './selectors.js';
 import { escapeHtml, log } from './storage.js';
+import { getSettings } from './settings.js';
+import { preprocessImage } from './image-preprocess.js';
 import {
     getLorebookImage,
     putLorebookImage,
@@ -357,18 +359,16 @@ async function loadImagesForGrid(worldName, entryUid, metaList) {
 async function uploadLorebookImage(worldName, entryUid, file) {
     if (!file) return;
 
-    // Validate image type
-    if (!/\.(jpg|jpeg|png|gif|webp|bmp|apng|tif|tiff)$/i.test(file.name)) {
-        toastr.warning(`"${file.name}" is not a supported image type.`);
-        return;
-    }
-
     try {
+        const settings = getSettings();
+        const { accepted, results } = await preprocessImage([file], settings);
+        if (!accepted || results.length === 0) return;
+
         const base = file.name.replace(/\.[^.]+$/, '');
         const ext = (file.name.match(/\.[^.]+$/) || ['.png'])[0];
         const filename = `${base}_${Date.now()}${ext}`;
 
-        const blob = new Blob([await file.arrayBuffer()], { type: file.type });
+        const blob = results[0].blob;
 
         // Default label: use "Entry Title:" if set, otherwise cleaned filename
         let label = '';

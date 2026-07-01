@@ -448,3 +448,30 @@
     color: var(--text-color-accent, #7baaf7);
     border-color: var(--text-color-accent, #7baaf7);
 }
+
+/* ── Image Preprocessing Dialog ── */
+
+.pp-prep-file-list {
+    margin: 8px 0 12px;
+}
+
+.pp-prep-file-row {
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+.pp-prep-file-row.pp-prep-accepted {
+    color: #4caf50;
+    background: rgba(76, 175, 80, 0.08);
+}
+
+.pp-prep-file-row.pp-prep-rejected {
+    color: #f44336;
+    background: rgba(244, 67, 54, 0.08);
+}
+
+.pp-prep-file-reason {
+    opacity: 0.85;
+}

@@ -15,6 +15,7 @@ import { SEL } from './selectors.js';
 import { escapeHtml, dbPut, dbGet, dbDelete, log } from './storage.js';
 import { getSettings, getMetaForPersona, setMetaForPersona } from './settings.js';
 import { clearFetchCache, enableGridDragReorder } from './lorebook-images.js';
+import { preprocessImage } from './image-preprocess.js';
 
 // ── Module State ──────────────────────────
 
@@ -310,24 +311,26 @@ async function uploadExtraImages(avatarId, files) {
             return;
         }
 
-        const filesToUpload = Array.from(files).slice(0, remaining);
-        if (filesToUpload.length < files.length) {
-            toastr.warning(`Only uploading ${filesToUpload.length} of ${files.length} — limit is ${maxImages} images.`);
-        }
-        if (filesToUpload.length === 0) return;
+        // Pass all files to preprocessing — dialog shows validation status for every file.
+        const { accepted, results } = await preprocessImage(Array.from(files), settings);
+        if (!accepted) return;
 
-        for (const file of filesToUpload) {
-            if (!/\.(jpg|jpeg|png|gif|webp|bmp|apng|tif|tiff)$/i.test(file.name)) {
-                toastr.warning(`"${file.name}" is not a supported image type.`);
-                continue;
-            }
+        // Cap to remaining slots.
+        const toStore = results.slice(0, remaining);
+        if (toStore.length < results.length) {
+            toastr.warning(`Only uploading ${toStore.length} of ${results.length} — limit is ${maxImages} images.`);
+        }
+        if (toStore.length === 0) return;
+
+        let acceptedCount = 0;
+        for (const { file, blob } of toStore) {
+            acceptedCount++;
 
             const base = file.name.replace(/\.[^.]+$/, '');
             const ext = (file.name.match(/\.[^.]+$/) || ['.png'])[0];
             const filename = `${base}_${Date.now()}${ext}`;
 
             const id = `${avatarId}::${filename}`;
-            const blob = new Blob([await file.arrayBuffer()], { type: file.type });
             const label = base.replace(/[_-]/g, ' ');
 
             await dbPut(id, blob, { filename, label });
@@ -337,8 +340,10 @@ async function uploadExtraImages(avatarId, files) {
             setMetaForPersona(avatarId, metaList);
         }
 
-        toastr.success(`Uploaded ${filesToUpload.length} image(s)`);
-        loadPersonaImagesForPanel(avatarId);
+        if (acceptedCount > 0) {
+            toastr.success(`Uploaded ${acceptedCount} image(s)`);
+            loadPersonaImagesForPanel(avatarId);
+        }
     } catch (err) {
         log.error('Upload failed:', err);
         toastr.error('Upload failed. Check console for details.');
