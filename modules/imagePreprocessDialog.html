@@ -1,0 +1,22 @@
+<div>
+    <h3>Image Upload</h3>
+    <div class="pp-prep-file-list">
+        {{#each files}}
+            <div class="pp-prep-file-row {{#if animated}}pp-prep-warning{{else if accepted}}pp-prep-accepted{{else}}pp-prep-rejected{{/if}}">
+                {{#if accepted}}
+                    <img class="pp-prep-preview" src="{{previewUrl}}" alt="{{name}}">
+                    <div class="pp-prep-file-info">
+                        <span class="pp-prep-file-name">{{name}}</span>
+                        <span class="pp-prep-file-dims">{{width}}×{{height}}</span>
+                        {{#if animated}}
+                            <span class="pp-prep-file-warning">⚠️ {{warning}}</span>
+                        {{/if}}
+                    </div>
+                {{else}}
+                    <span class="pp-prep-file-name">{{name}}</span>
+                    <span class="pp-prep-file-reason">— {{reason}}</span>
+                {{/if}}
+            </div>
+        {{/each}}
+    </div>
+</div>

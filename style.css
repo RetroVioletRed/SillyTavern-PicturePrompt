@@ -456,15 +456,44 @@
 }
 
 .pp-prep-file-row {
-    padding: 4px 8px;
+    padding: 6px 8px;
     border-radius: 4px;
     margin-bottom: 4px;
     font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pp-prep-preview {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.pp-prep-file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    text-align: center;
+}
+
+.pp-prep-file-dims {
+    font-size: 11px;
+    opacity: 0.7;
 }
 
 .pp-prep-file-row.pp-prep-accepted {
     color: #4caf50;
     background: rgba(76, 175, 80, 0.08);
+}
+
+.pp-prep-file-row.pp-prep-warning {
+    color: #ff9800;
+    background: rgba(255, 152, 0, 0.08);
 }
 
 .pp-prep-file-row.pp-prep-rejected {
