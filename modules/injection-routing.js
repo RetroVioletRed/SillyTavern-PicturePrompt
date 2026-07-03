@@ -6,6 +6,9 @@
  *
  * prompt-injection.js imports from here and adds the ST glue layer.
  *
+ * CONTRACT: Zero ST imports — enforced by tests/invariants.test.js.
+ * If you need ST data, pass it as a function parameter.
+ *
  * @module injection-routing
  */
 

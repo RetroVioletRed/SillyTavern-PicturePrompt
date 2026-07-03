@@ -5,6 +5,10 @@
  * character/persona CRUD operations. Lorebook-specific CRUD lives in
  * lorebook-images.js (which imports from here).
  *
+ * CONTRACT: All logging goes through the `log` object exported here.
+ * `log.debug` is gated behind /pp-debug; `log.warn`/`log.error` always fire.
+ * Never use raw console.* — enforced by tests/invariants.test.js.
+ *
  * @module storage
  */
 

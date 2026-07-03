@@ -6,6 +6,9 @@
  * prompt injection consume the same plan — no duplicate settings resolution
  * or image fetching.
  *
+ * CONTRACT: One plan feeds both estimation and injection.
+ * Don't fork paths — add new sources here, consumers pick them up automatically.
+ *
  * @module injection-plan
  */
 
