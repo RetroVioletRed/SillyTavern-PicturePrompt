@@ -11,6 +11,16 @@
                         {{#if animated}}
                             <span class="pp-prep-file-warning">⚠️ {{warning}}</span>
                         {{/if}}
+                        {{#if needsResize}}
+                            <label class="pp-prep-toggle" title="Shrinks images to fit within vision model limits. Saves tokens with no quality loss. Uncheck to upload at original resolution.">
+                                <input type="checkbox" class="pp-prep-resize" data-index="{{@index}}" checked>
+                                Resize to {{maxDimension}}px
+                            </label>
+                        {{/if}}
+                        <label class="pp-prep-toggle" title="Re-encodes as WebP with lossy compression. Saves tokens with a small quality loss. May alter colors or lose transparency in non-WebP formats.">
+                            <input type="checkbox" class="pp-prep-webp" data-index="{{@index}}" {{#if webpDefault}}checked{{/if}}>
+                            Convert to WebP
+                        </label>
                     </div>
                 {{else}}
                     <span class="pp-prep-file-name">{{name}}</span>

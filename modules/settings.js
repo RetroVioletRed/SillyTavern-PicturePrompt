@@ -46,6 +46,9 @@ export const defaultSettings = {
     positionGalleryImages: 'system',
     positionLorebookImages: 'system',
     injectionIndicatorEnabled: true,
+    preprocessMaxDimension: 2048,
+    preprocessConvertWebp: false,
+    preprocessWebpQuality: 80,
 };
 
 // ── User Feedback ─────────────────────────

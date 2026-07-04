@@ -109,6 +109,52 @@ async function readPreview(file) {
 }
 
 /**
+ * Run canvas pipeline for a single file: resize (if requested) + optional WebP conversion.
+ * @param {File} file
+ * @param {object} settings - extension settings
+ * @param {boolean} doResize - whether to scale to maxDimension
+ * @param {boolean} doWebp - whether to export as WebP
+ * @returns {Promise<Blob>}
+ */
+async function canvasProcess(file, settings, doResize, doWebp) {
+    const url = URL.createObjectURL(file);
+    try {
+        const img = await new Promise((resolve, reject) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = () => reject(new Error('Failed to load image for processing'));
+            i.src = url;
+        });
+
+        let tw = img.naturalWidth;
+        let th = img.naturalHeight;
+
+        if (doResize) {
+            const scale = settings.preprocessMaxDimension / Math.max(tw, th);
+            tw = Math.round(tw * scale);
+            th = Math.round(th * scale);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = tw;
+        canvas.height = th;
+        canvas.getContext('2d').drawImage(img, 0, 0, tw, th);
+
+        const mimeType = doWebp ? 'image/webp' : file.type;
+        const quality = doWebp ? settings.preprocessWebpQuality / 100 : 1;
+
+        return new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error('Canvas export failed'));
+            }, mimeType, quality);
+        });
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
+/**
  * Validate all files, show batch dialog, return accepted blobs.
  *
  * @param {File[]} files    - Files selected by the user.
@@ -148,6 +194,9 @@ export async function preprocessImage(files, settings) {
             previewUrl: r.previewUrl,
             width: r.width,
             height: r.height,
+            needsResize: r.valid && Math.max(r.width, r.height) > settings.preprocessMaxDimension,
+            maxDimension: settings.preprocessMaxDimension,
+            webpDefault: settings.preprocessConvertWebp,
         })),
     };
 
@@ -174,18 +223,21 @@ export async function preprocessImage(files, settings) {
         if (r.previewUrl) URL.revokeObjectURL(r.previewUrl);
     }
 
-    // Read blobs for valid files only.
-    const results = await Promise.all(
-        enrichedResults
-            .filter(r => r.valid)
-            .map(async (r) => {
-                const buf = await r.file.arrayBuffer();
-                return {
-                    file: r.file,
-                    blob: new Blob([buf], { type: r.file.type }),
-                };
-            })
-    );
+    // Read toggle state from dialog DOM, process files that need canvas work.
+    const results = [];
+    for (let i = 0; i < enrichedResults.length; i++) {
+        const r = enrichedResults[i];
+        if (!r.valid) continue;
+
+        const doResize = template.find(`.pp-prep-resize[data-index="${i}"]`).prop('checked') === true;
+        const doWebp = template.find(`.pp-prep-webp[data-index="${i}"]`).prop('checked') === true;
+
+        const blob = (doResize || doWebp)
+            ? await canvasProcess(r.file, settings, doResize, doWebp)
+            : new Blob([await r.file.arrayBuffer()], { type: r.file.type });
+
+        results.push({ file: r.file, blob });
+    }
 
     return { accepted: true, results };
 }
