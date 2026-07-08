@@ -283,6 +283,38 @@ export function registerSettingsListeners() {
         $(this).text(s.positionLorebookImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionLorebookImages === 'user');
         getContext().saveSettingsDebounced();
     });
+
+    // Import/Export
+    $('#picture_prompt_export').on('click', async function () {
+        $(this).prop('disabled', true);
+        try {
+            const { exportImageData } = await import('./import-export.js');
+            await exportImageData();
+        } finally {
+            $(this).prop('disabled', false);
+        }
+    });
+
+    $('#picture_prompt_import').on('click', function () {
+        $('#picture_prompt_import_file').click();
+    });
+
+    $('#picture_prompt_import_file').on('change', async function () {
+        const file = this.files?.[0];
+        if (!file) return;
+        const $exportBtn = $('#picture_prompt_export');
+        const $importBtn = $('#picture_prompt_import');
+        $exportBtn.prop('disabled', true);
+        $importBtn.prop('disabled', true);
+        try {
+            const { importImageData } = await import('./import-export.js');
+            await importImageData(file);
+        } finally {
+            $exportBtn.prop('disabled', false);
+            $importBtn.prop('disabled', false);
+            $(this).val('');
+        }
+    });
 }
 
 // ── Settings UI Bootstrap ─────────────────

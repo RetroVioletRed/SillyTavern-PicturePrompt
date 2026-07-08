@@ -17,6 +17,7 @@ Anyone using SillyTavern with a vision model who wants richer, more consistent s
 - **Gallery images injection**: Inject gallery images to the prompt, use them as extra images for character, items and scene references
 - **Lorebook entry images**: Attach images to Lorebook entries, they pass alongside entry text; solid for NPCs, places and artifacts
 - **Fully local and offline**: Images are stored in your browser and never leave your machine if you are using a local model
+- **Import/Export**: Easily back up or migrate your images in just two clicks
 - **Custom labels**: Attach a text hint to each image; it helps to steer the model and get the best results
 - **Token estimation**: The extension shows you token cost overhead in settings before generation
 - **Per-source quality override**: Different quality per source (avatars, extras, gallery, lorebook) to balance detail and token cost
