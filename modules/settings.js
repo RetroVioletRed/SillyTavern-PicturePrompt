@@ -17,7 +17,7 @@ import {
     user_avatar,
 } from '../../../../../script.js';
 import { oai_settings, isImageInliningSupported as stImageInliningSupported } from '../../../../openai.js';
-import { dbGetAll, log } from './storage.js';
+import { dbGetAll, getStorageStats, log } from './storage.js';
 
 // ── Module Constants ──────────────────────
 
@@ -168,6 +168,29 @@ export function applySettingsToUI() {
     $('#picture_prompt_position_char_extra').text(s.positionGalleryImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionGalleryImages === 'user');
     $('#picture_prompt_position_lorebook').text(s.positionLorebookImages === 'user' ? 'U' : 'S').toggleClass('pp-position-user', s.positionLorebookImages === 'user');
     $('#picture_prompt_injection_indicator').prop('checked', s.injectionIndicatorEnabled ?? true);
+
+    // Refresh storage stats (fire-and-forget).
+    getStorageStats().then(stats => {
+        const $el = $('#picture_prompt_storage_stats');
+        if (!$el.length) return;
+
+        const formatSize = bytes => {
+            if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB';
+            return (bytes / 1024).toFixed(0) + ' KB';
+        };
+        const formatAvail = bytes => bytes >= 1e9
+            ? (bytes / 1e9).toFixed(1) + ' GB' : formatSize(bytes);
+
+        const parts = [];
+        if (stats.personaCount) parts.push(`${stats.personaCount} persona images`);
+        if (stats.lorebookCount) parts.push(`${stats.lorebookCount} lorebook images`);
+        if (!parts.length) parts.push('No images stored');
+
+        const used = formatSize(stats.totalSize);
+        const avail = formatAvail(stats.availableBytes);
+
+        $el.text(`${parts.join(' · ')} — ${used} / ${avail} available`);
+    }).catch(() => {});
 }
 
 export function registerSettingsListeners() {

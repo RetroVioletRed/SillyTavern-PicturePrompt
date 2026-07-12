@@ -195,3 +195,45 @@ export async function getImageDisplayUrl(avatarId, filename) {
     if (!entry?.blob) return null;
     return URL.createObjectURL(entry.blob);
 }
+
+/**
+ * Get storage statistics: image counts, sizes, and available browser quota.
+ * @returns {Promise<{personaCount: number, personaSize: number, lorebookCount: number, lorebookSize: number, totalCount: number, totalSize: number, availableBytes: number}>}
+ */
+export async function getStorageStats() {
+    const db = await openDB();
+    const records = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+
+    let personaCount = 0, personaSize = 0;
+    let lorebookCount = 0, lorebookSize = 0;
+
+    for (const r of records) {
+        const size = r.blob?.size ?? 0;
+        if (r.id?.startsWith('lorebook::')) {
+            lorebookCount++;
+            lorebookSize += size;
+        } else {
+            personaCount++;
+            personaSize += size;
+        }
+    }
+
+    let availableBytes = 0;
+    try {
+        const est = await navigator.storage.estimate();
+        availableBytes = (est.quota ?? 0) - (est.usage ?? 0);
+    } catch { /* non-fatal */ }
+
+    return {
+        personaCount, personaSize,
+        lorebookCount, lorebookSize,
+        totalCount: personaCount + lorebookCount,
+        totalSize: personaSize + lorebookSize,
+        availableBytes,
+    };
+}
