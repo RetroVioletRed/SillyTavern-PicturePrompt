@@ -299,31 +299,14 @@ function cancelLabelEdit($input) {
 
 async function uploadExtraImages(avatarId, files) {
     const settings = getSettings();
-    const maxImages = Number.isFinite(settings.maxExtraImages) ? Math.max(0, settings.maxExtraImages) : 8;
 
     try {
-        const existing = getMetaForPersona(avatarId);
-        const currentCount = existing.length;
-        const remaining = maxImages - currentCount;
-
-        if (remaining <= 0) {
-            toastr.warning(`Maximum of ${maxImages} extra images reached for this persona.`);
-            return;
-        }
-
         // Pass all files to preprocessing — dialog shows validation status for every file.
         const { accepted, results } = await preprocessImage(Array.from(files), settings);
         if (!accepted) return;
 
-        // Cap to remaining slots.
-        const toStore = results.slice(0, remaining);
-        if (toStore.length < results.length) {
-            toastr.warning(`Only uploading ${toStore.length} of ${results.length} — limit is ${maxImages} images.`);
-        }
-        if (toStore.length === 0) return;
-
         let acceptedCount = 0;
-        for (const { file, blob } of toStore) {
+        for (const { file, blob } of results) {
             acceptedCount++;
 
             const base = file.name.replace(/\.[^.]+$/, '');
